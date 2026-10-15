@@ -260,6 +260,7 @@ class ProcessingResult:
     ocr_mode: str = "auto"
     pages_total: Optional[int] = None  # pages in the file when only the first max_pages were converted
     rebuild_seconds: Optional[float] = None
+    run_id: Optional[str] = None  # history entry this result is stored under (utils.history)
 
     @property
     def ocr_pages(self) -> list[int]:

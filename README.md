@@ -93,6 +93,7 @@ On minimal Linux images, OpenCV may need `libgl1` and `libglib2.0-0` (`apt insta
 5. **Table Explorer**: switch tables; search, sort and filter; choose columns for wide tables; filter by source page or flagged rows. Cells with findings are highlighted. Below the table: a row inspector (raw vs typed values, operations, findings), merge decisions, repeated headers removed, duplicates and missing values, and the header mapping.
 6. **Validation Center**: Critical / Warning / Informational / Passed counts, filters by table, check and certainty, and one card per finding with location, extracted, expected and difference values, an explanation and a suggested action.
 7. **Export Center**: download the `.xlsx` workbook, CSV files (zip) or the validation report (JSON), and preview the report and audit.
+8. **History**: every conversion with its date, type, pages, tables, rows, errors and warnings. For each run: **Open results** (reopens it instantly, without reading the document again), download the **original file**, the **Excel workbook** or the **validation report**, or **Delete** it. Search by file name; totals and disk use are shown at the top.
 
 Results are kept per browser session and keyed by file hash, so navigating or re-rendering never re-processes a document. Converting the same file again (for example with other upload options) replaces the stored result.
 
@@ -123,7 +124,7 @@ core/
   models.py                 dataclasses shared across stages
 models/local_llm.py         optional Ollama client (localhost only)
 config/settings.py          central settings, overridable with DOCUPILOT_* environment variables
-utils/                      file validation, JSON logging, metrics-only history
+utils/                      file validation, JSON logging, run history (files + metrics)
 scripts/                    sample generator, evaluation, stress probe, LLM demo, model pre-fetch
 tests/                      pytest suite (93 tests, including a headless UI workflow test)
 ```
@@ -247,7 +248,8 @@ The app is fully functional without an LLM.
 - **Local LLM only.** The Ollama client refuses non-localhost hosts unless `DOCUPILOT_ALLOW_REMOTE_LLM=1` is set.
 - **Upload validation.** Extension allow-list, magic-byte check, size limit, and filename sanitisation (directory components stripped, so path traversal is blocked).
 - **No formula injection.** Extracted text is never executed. Text starting with `=` is written to Excel as a string, not a formula.
-- **Logs and history hold metadata only.** Logs (`logs/`, JSON lines) contain stage, timing and count data, never cell contents. History (`reports/history.json`) stores per-run metrics only and can be cleared in the UI or disabled with `DOCUPILOT_HISTORY=0`.
+- **Logs hold metadata only.** Logs (`logs/`, JSON lines) contain stage, timing and count data, never cell contents.
+- **History keeps your files, locally.** Each conversion is listed in `reports/history.json` and, by default, gets a folder `reports/history/<run id>/` with the uploaded document, the Excel workbook (replaced when clean-up options are re-applied), the validation report (JSON) and the saved result, so the History page can reopen a run instantly and re-download every file. A saved result is reopened only if its SHA-256 matches the one recorded when the app wrote it. Delete one run or clear everything from the History page. `DOCUPILOT_HISTORY_FILES=0` keeps metrics only (no document contents); `DOCUPILOT_HISTORY=0` disables history entirely. The newest 200 runs are kept.
 
 ## Hardware and performance
 
@@ -261,7 +263,7 @@ Developed and measured on an Intel i7-1255U laptop (10 cores), 16 GB RAM, no GPU
 
 Minimum: 4 GB free RAM and a 64-bit CPU. A 50-page scanned document takes several minutes on CPU.
 
-Settings can be overridden with environment variables: `DOCUPILOT_MAX_PAGES`, `DOCUPILOT_MAX_FILE_MB`, `DOCUPILOT_OCR_DPI`, `DOCUPILOT_OLLAMA_HOST`, `DOCUPILOT_OCR_BACKEND` (`auto` or `legacy`), `DOCUPILOT_REPORTS_DIR`, `DOCUPILOT_LOGS_DIR`, `DOCUPILOT_HISTORY`.
+Settings can be overridden with environment variables: `DOCUPILOT_MAX_PAGES`, `DOCUPILOT_MAX_FILE_MB`, `DOCUPILOT_OCR_DPI`, `DOCUPILOT_OLLAMA_HOST`, `DOCUPILOT_OCR_BACKEND` (`auto` or `legacy`), `DOCUPILOT_REPORTS_DIR`, `DOCUPILOT_LOGS_DIR`, `DOCUPILOT_HISTORY`, `DOCUPILOT_HISTORY_FILES`.
 
 ## Troubleshooting
 

@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 logs/
 reports/history.json
+reports/history/
 reports/*.tmp
 *.xlsx
 !reports/sample_outputs/*.xlsx

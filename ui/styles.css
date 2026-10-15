@@ -708,6 +708,27 @@ h4.dp-tbl-title { font-size: 0.95rem !important; font-weight: 700 !important; ma
 .dp-preview td.warning { background: #f8e5b9; cursor: help; }
 .dp-more { font-size: 0.78rem; color: var(--muted); margin: 6px 0 0; }
 
+/* history: one card per run */
+.dp-stats.four { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 18px; }
+[class*="st-key-run_"] {
+  background: var(--surface-solid); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px 14px;
+  box-shadow: var(--shadow); margin-top: 12px; gap: 0.4rem;
+}
+[class*="st-key-run_"]:hover { border-color: #f4c7a3; }
+.dp-run { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.dp-run .ic { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--tint); color: var(--accent); border: 1px solid #fbd3b4; }
+.dp-run .ic svg { width: 18px; height: 18px; }
+.dp-run .meta { min-width: 0; }
+.dp-run .meta b { display: block; color: var(--text); font-size: 1rem; overflow-wrap: anywhere; }
+.dp-run .meta span { color: var(--muted); font-size: 0.8rem; }
+[class*="st-key-run_"] .stDownloadButton > button, [class*="st-key-run_"] .stButton > button { min-height: 2.4rem; font-size: 0.86rem !important; }
+[class*="st-key-acts_"] { flex-wrap: wrap; }
+[class*="st-key-acts_"] [data-testid="stElementContainer"] { width: auto !important; flex: 0 0 auto; }
+[class*="st-key-acts_"] [data-testid="stElementContainer"]:last-child { margin-left: auto; }
+[class*="st-key-acts_"] .stButton > button[kind="tertiary"] { color: var(--critical) !important; }
+.stMarkdown p.dp-hint, p.dp-hint { font-size: 0.82rem !important; color: var(--muted) !important; }
+
 /* results: checks and problems */
 .dp-checkgrid { list-style: none; padding: 0; margin: 14px 0 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .dp-checkgrid li { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 0;
@@ -764,6 +785,7 @@ h4.dp-tbl-title { font-size: 0.95rem !important; font-weight: 700 !important; ma
 
 @container dp-main (max-width: 960px) {
   .dp-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dp-stats.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @container dp-main (max-width: 560px) {
   .dp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }

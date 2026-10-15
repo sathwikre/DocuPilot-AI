@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import time
 import zipfile
 from datetime import date
@@ -29,7 +30,9 @@ from ui.components import (
     stat, state_card,
 )
 from utils.file_validation import FileValidationError, sanitize_filename, sha256_bytes
-from utils.history import clear_history, load_history, record_run
+from utils.history import (
+    clear_history, delete_run, load_history, load_result, record_run, run_files, storage_used, update_run,
+)
 
 ROOT = Path(__file__).resolve().parent
 SAMPLES = {  # label -> (path, button icon, tooltip)
@@ -238,13 +241,16 @@ def page_home() -> None:
                 ss.results[result.file_hash] = result
                 ss.active = result.file_hash
                 ss.applied = None
-                record_run(result)
+                record_run(result, data)
                 st.rerun()
 
     res = active_result()
     if res is None:
-        render(note("Files are processed on this computer. Nothing is uploaded to external services, and the "
-                    "processing history stores metrics only — never document contents.", "", "lock"))
+        kept = ("Each conversion — the uploaded file, its Excel workbook and validation report — is kept in History "
+                "on this computer, where you can reopen, download or delete it."
+                if SETTINGS.history_enabled and SETTINGS.history_files else
+                "The processing history stores metrics only — never document contents.")
+        render(note(f"Files are processed on this computer. Nothing is uploaded to external services. {kept}", "", "lock"))
         return
     render_results(res)
 
@@ -346,6 +352,7 @@ def cleanup_checklist(res: ProcessingResult) -> None:
         a1, a2 = st.columns([1, 2.4], vertical_alignment="center")
         if a1.button("Apply to the Excel file", type="primary", disabled=not dirty, width="stretch", key="apply_fixes"):
             new = rebuild(res, picked)
+            update_run(new)
             ss.results[res.file_hash] = new
             ss.applied = new.rebuild_seconds
             st.rerun()
@@ -678,31 +685,97 @@ def page_export(res: ProcessingResult) -> None:
         st.dataframe(au, width="stretch", hide_index=True, height=380)
 
 
+HISTORY_PAGE_SIZE = 10
+FILE_MIME = {"workbook": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+             "validation": "application/json"}
+
+
+def _open_run(entry: dict) -> None:
+    res = load_result(entry)
+    if res is None:
+        st.toast("This run's saved result is missing or was changed on disk, so it cannot be reopened.", icon="⚠️")
+        return
+    ss.results[res.file_hash] = res
+    ss.active = res.file_hash
+    ss.applied = None
+    goto("Home")
+
+
 def page_history() -> None:
     hist = load_history()
-    render(page_title("History", "Metrics of documents processed on this machine. Document contents are never stored."))
+    stored = SETTINGS.history_files
+    render(page_title("History", "Every document converted on this computer, with the files it produced. "
+                      "Reopen a result, download its files again, or delete it."
+                      if stored else "Metrics of documents processed on this computer. File storage is switched off "
+                      "(DOCUPILOT_HISTORY_FILES=0), so only metrics are kept."))
     if not hist:
-        render(empty_state("No history yet", "Run an extraction and it will be listed here.", "history"))
+        render(empty_state("No history yet", "Convert a document and it will be listed here with its files.", "history"))
         return
-    df = pd.DataFrame(list(reversed(hist)))
-    keep = [c for c in ["timestamp", "file_name", "doc_type", "pages", "tables", "rows", "critical", "warnings", "ocr_pages",
-                        "elapsed"] if c in df]
-    df = df[keep].rename(columns={"timestamp": "When", "file_name": "Document", "doc_type": "Type", "pages": "Pages",
-                                  "tables": "Tables", "rows": "Rows", "critical": "Critical", "warnings": "Warnings",
-                                  "ocr_pages": "OCR pages", "elapsed": "Seconds"})
-    df["Type"] = df["Type"].map(lambda v: DOC_TYPES.get(v, v))
-    st.dataframe(df, width="stretch", hide_index=True)
-    in_session = {r.file_name: h for h, r in ss.results.items()}
-    if in_session:
-        st.caption("Open a result from this session:")
-        cols = st.columns(min(4, len(in_session)))
-        for k, (name, h) in enumerate(in_session.items()):
-            if cols[k % len(cols)].button(name, key=f"open_{h}", width="stretch"):
-                ss.active = h
-                goto("Overview")
-    if st.button("Clear history", icon=":material/delete:"):
-        clear_history()
-        st.rerun()
+
+    totals = {"runs": len(hist), "pages": sum(int(e.get("pages", 0)) for e in hist),
+              "rows": sum(int(e.get("rows", 0)) for e in hist)}
+    render('<div class="dp-stats four">' + "".join([
+        stat("Conversions", totals["runs"]), stat("Pages read", f"{totals['pages']:,}"),
+        stat("Rows extracted", f"{totals['rows']:,}"), stat("Stored on disk", f"{storage_used() / 1024 / 1024:,.1f} MB"),
+    ]) + "</div>")
+
+    f1, f2 = st.columns([3, 1], vertical_alignment="center")
+    q = f1.text_input("Search", placeholder="Search by file name…", label_visibility="collapsed", key="hist_q")
+    runs = [e for e in reversed(hist) if not q or q.lower() in e.get("file_name", "").lower()]
+    pages = max(1, -(-len(runs) // HISTORY_PAGE_SIZE))
+    page_no = f2.selectbox("Page", range(1, pages + 1), format_func=lambda p: f"Page {p} of {pages}", key="hist_page",
+                           label_visibility="collapsed") if pages > 1 else 1
+    if not runs:
+        render(empty_state("Nothing matches", "No converted file name contains that text.", "history"))
+
+    for k, e in enumerate(runs[(page_no - 1) * HISTORY_PAGE_SIZE: page_no * HISTORY_PAGE_SIZE]):
+        rid = e.get("run_id") or f"legacy{k}_{e.get('timestamp', '')}"
+        files = run_files(e)
+        with st.container(key=f"run_{re.sub(r'[^A-Za-z0-9_-]', '_', rid)}"):
+            crit, warn = int(e.get("critical", 0)), int(e.get("warnings", 0))
+            chips = (chip(DOC_TYPES.get(e.get("doc_type"), e.get("doc_type") or "—"), "violet", "file")
+                     + chip(f"{e.get('pages', 0)} page(s)", "ghost", "pages")
+                     + chip(f"{e.get('tables', 0)} table(s) · {int(e.get('rows', 0)):,} rows", "ghost", "table")
+                     + (chip(f"OCR on {e['ocr_pages']}", "cyan", "scan") if e.get("ocr_pages") else "")
+                     + chip(f"{crit} error(s)", "critical" if crit else "passed", "octagon" if crit else "check")
+                     + (chip(f"{warn} warning(s)", "warning", "alert") if warn else "")
+                     + (chip(f"{e['removed_rows']} row(s) removed", "ghost") if e.get("removed_rows") else ""))
+            when = e.get("timestamp", "")
+            if e.get("updated"):
+                when += f" · clean-up re-applied {e['updated'][11:16]}"
+            render(f'<div class="dp-run"><div class="ic">{icon("file")}</div><div class="meta">'
+                   f'<b>{esc(e.get("file_name", ""))}</b><span>{esc(when)} · read in {float(e.get("elapsed", 0)):.1f} s'
+                   f'</span></div></div><div class="dp-chips" style="margin:8px 0 10px">{chips}</div>')
+            if not files:
+                render('<p class="dp-hint">Only metrics were kept for this run (it was converted before file storage '
+                       'was switched on, or its files were removed).</p>')
+                continue
+            with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"acts_{rid}"):
+                if "result" in files and st.button("Open results", key=f"open_{rid}", type="primary",
+                                                   icon=":material/visibility:"):
+                    _open_run(e)
+                if "source" in files:
+                    st.download_button("Original file", files["source"].read_bytes(), file_name=files["source"].name,
+                                       key=f"src_{rid}", icon=":material/description:")
+                if "workbook" in files:
+                    st.download_button("Excel workbook", files["workbook"].read_bytes(),
+                                       file_name=files["workbook"].name, mime=FILE_MIME["workbook"], key=f"xlsx_{rid}",
+                                       icon=":material/table_view:")
+                if "validation" in files:
+                    st.download_button("Validation report", files["validation"].read_bytes(),
+                                       file_name=files["validation"].name, mime=FILE_MIME["validation"],
+                                       key=f"json_{rid}", icon=":material/fact_check:")
+                if e.get("run_id") and st.button("Delete", key=f"del_{rid}", type="tertiary", icon=":material/delete:",
+                                                 help="Remove this run and all its stored files"):
+                    delete_run(e["run_id"])
+                    st.rerun()
+
+    st.write("")
+    with st.expander("Clear the whole history"):
+        st.caption("Deletes every entry and every stored file (uploaded documents, workbooks, reports). This cannot be undone.")
+        if st.button("Delete all history", icon=":material/delete_forever:", key="clear_all"):
+            clear_history()
+            st.rerun()
 
 
 # =============================================================================== router

@@ -47,6 +47,8 @@ class Settings:
     reports_dir: Path = field(default_factory=lambda: Path(os.environ.get("DOCUPILOT_REPORTS_DIR", PROJECT_ROOT / "reports")))
     logs_dir: Path = field(default_factory=lambda: Path(os.environ.get("DOCUPILOT_LOGS_DIR", PROJECT_ROOT / "logs")))
     history_enabled: bool = _env_bool("DOCUPILOT_HISTORY", True)
+    # Keep each run's files (uploaded document, workbook, validation report, saved result) under reports/history/.
+    history_files: bool = _env_bool("DOCUPILOT_HISTORY_FILES", True)
 
 
 SETTINGS = Settings()
