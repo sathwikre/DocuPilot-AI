@@ -9,7 +9,7 @@ import pandas as pd
 from core.models import ProcessingResult
 from ui.components import CHECK_LABELS
 
-SEV_COLORS = {"Critical": "#9b2c2c", "Warning": "#d68f2a", "Informational": "#3b6e8f", "Passed": "#2b7a73"}
+SEV_COLORS = {"Critical": "#9b2c2c", "Warning": "#f59e0b", "Informational": "#3b6e8f", "Passed": "#2b7a73"}
 SEV_ORDER = list(SEV_COLORS)
 _SEV_NAME = {"critical": "Critical", "warning": "Warning", "info": "Informational", "passed": "Passed"}
 
@@ -48,7 +48,7 @@ def rows_by_page_chart(result: ProcessingResult) -> alt.Chart:
     chart = alt.Chart(df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
         x=alt.X("Page:O", title="Source page", axis=alt.Axis(labelAngle=0)),
         y=alt.Y("sum(Rows):Q", title=None),
-        color=alt.Color("Table:N", scale=alt.Scale(range=["#6b4226", "#e3a63b", "#2b7a73", "#b4621c", "#3b6e8f", "#a07a5a"]),
+        color=alt.Color("Table:N", scale=alt.Scale(range=["#ea580c", "#2b7a73", "#fb923c", "#9a3412", "#3b6e8f", "#fdba74"]),
                         legend=alt.Legend(title=None, orient="bottom")),
         tooltip=["Table", "Page", "Rows"])
     return _style(chart, 210)
@@ -69,7 +69,7 @@ def checks_chart(result: ProcessingResult) -> alt.Chart:
 
 def stage_chart(result: ProcessingResult) -> alt.Chart:
     df = pd.DataFrame({"Stage": list(result.stage_timings), "Seconds": list(result.stage_timings.values())})
-    chart = alt.Chart(df).mark_bar(cornerRadiusEnd=4, height=14, color="#6b4226").encode(
+    chart = alt.Chart(df).mark_bar(cornerRadiusEnd=4, height=14, color="#ea580c").encode(
         y=alt.Y("Stage:N", sort=None, title=None), x=alt.X("Seconds:Q", title="seconds"),
         tooltip=["Stage", alt.Tooltip("Seconds:Q", format=".2f")])
     return _style(chart, 200)

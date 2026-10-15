@@ -182,10 +182,11 @@ def no_result_state(what: str) -> None:
 
 
 # =============================================================================== pages
-REPEATS = {"Yes, remove them": True, "No, keep them": False}
-OCR_CHOICES = {"Automatic": ("auto", "Only pages that are pictures are read by OCR (fastest)."),
-               "Always OCR": ("force", "Every page is read as a picture, even if it has a text layer."),
-               "Never": ("off", "Use the PDF text layer only; pages that are pictures are reported, not read.")}
+REPEATS = {"Remove them": (True, "Exact repeats go to a “Removed rows” sheet"),
+           "Keep them": (False, "Every row stays; repeats are flagged")}
+OCR_CHOICES = {"Automatic": ("auto", "OCR only pages that are pictures"),
+               "Always": ("force", "OCR every page, even with a text layer"),
+               "Never": ("off", "Use the PDF text layer only")}
 
 
 def page_home() -> None:
@@ -201,15 +202,13 @@ def page_home() -> None:
         with st.container(key="opts_row"):
             o1, o2 = st.columns(2, gap="large")
         with o1:
-            render('<div class="dp-label">Remove repeated rows?</div>')
-            rep = st.segmented_control("Remove repeated rows", list(REPEATS), default="Yes, remove them",
-                                       key="opt_repeats", label_visibility="collapsed") or "Yes, remove them"
-            render(f'<p class="dp-hint">{"A row exactly the same as an earlier one is left out and listed on a “Removed rows” sheet." if REPEATS[rep] else "Every row is kept, even if it appears twice (repeats are still flagged)."}</p>')
+            render(f'<div class="dp-optlabel">{icon("rows")}<span>Repeated rows</span></div>')
+            rep = st.radio("Repeated rows", list(REPEATS), captions=[c for _, c in REPEATS.values()],
+                           key="opt_repeats", horizontal=True, label_visibility="collapsed")
         with o2:
-            render('<div class="dp-label">Scanned pages (OCR)</div>')
-            ocr_label = st.segmented_control("OCR mode", list(OCR_CHOICES), default="Automatic", key="opt_ocr",
-                                             label_visibility="collapsed") or "Automatic"
-            render(f'<p class="dp-hint">{OCR_CHOICES[ocr_label][1]}</p>')
+            render(f'<div class="dp-optlabel">{icon("scan")}<span>Scanned pages</span></div>')
+            ocr_label = st.radio("Scanned pages", list(OCR_CHOICES), captions=[c for _, c in OCR_CHOICES.values()],
+                                 key="opt_ocr", horizontal=True, label_visibility="collapsed")
 
         name, data, start = None, None, False
         if up is not None:
@@ -234,7 +233,7 @@ def page_home() -> None:
             start = st.button("Convert to Excel", type="primary", icon=":material/table_view:") or start
         if start:
             with proc_holder.container(key="process_panel"):
-                result = run_processing(name, data, OCR_CHOICES[ocr_label][0], REPEATS[rep], st.empty())
+                result = run_processing(name, data, OCR_CHOICES[ocr_label][0], REPEATS[rep][0], st.empty())
             if result is not None:
                 ss.results[result.file_hash] = result
                 ss.active = result.file_hash
