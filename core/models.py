@@ -205,6 +205,17 @@ class ValidationIssue:
 
 
 @dataclass
+class RemovedRow:
+    """A row taken out by a clean-up option. Listed on the workbook's 'Removed rows' sheet."""
+
+    table_id: str
+    row_id: str
+    page: int
+    cells: list[str]
+    reason: str
+
+
+@dataclass
 class PageReport:
     """What happened to each page during processing."""
 
@@ -239,6 +250,16 @@ class ProcessingResult:
     llm_used: bool = False
     llm_model: Optional[str] = None
     llm_notes: list[str] = field(default_factory=list)
+    # Clean-up checklist state (core.cleanup). base_tables are the reconstructed tables before any clean-up or
+    # typing, so the workbook can be rebuilt with other options without reading the document again.
+    options: frozenset[str] = frozenset()
+    checklist: dict[str, dict] = field(default_factory=dict)
+    removed_rows: list[RemovedRow] = field(default_factory=list)
+    base_tables: list[LogicalTable] = field(default_factory=list, repr=False)
+    line_fields: list[DocField] = field(default_factory=list, repr=False)
+    ocr_mode: str = "auto"
+    pages_total: Optional[int] = None  # pages in the file when only the first max_pages were converted
+    rebuild_seconds: Optional[float] = None
 
     @property
     def ocr_pages(self) -> list[int]:

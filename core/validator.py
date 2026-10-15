@@ -11,7 +11,9 @@ Severity: critical  = confirmed numerical failure under an established conventio
 """
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
+from datetime import date
 from decimal import Decimal
 from typing import Any, Iterable, Optional, Sequence
 
@@ -94,6 +96,7 @@ class Validator:
             self._column_shift(t)
             self._duplicates(t, balanced_rows)
             self._sequence(t)
+            self._date_order(t)
         return self.issues
 
     # ------------------------------------------------------------------ document level
@@ -694,6 +697,55 @@ class Validator:
                       table=t, page=t.pages[0])
 
 
+    def _date_order(self, t: LogicalTable) -> None:
+        """Dates in a ledger or statement run one way; a single date out of step is often a misread digit."""
+        for c, ty in enumerate(t.col_types):
+            if ty != "date":
+                continue
+            seq = [(r, t.values[r][c]) for r in t.data_row_indices() if isinstance(t.values[r][c], date)]
+            if len(seq) < 4:
+                continue
+            pairs = list(zip(seq, seq[1:]))
+            up = sum(b >= a for (_, a), (_, b) in pairs)
+            down = sum(b <= a for (_, a), (_, b) in pairs)
+            ascending = up >= down
+            in_order = up if ascending else down
+            if in_order / len(pairs) < 0.85:
+                continue  # dates are not kept in order in this table, so there is nothing to check
+            bad = [(r2, a, b) for (_, a), (r2, b) in pairs if (b < a if ascending else b > a)]
+            for r, prev, cur in bad:
+                self._add("date_order", "warning", FAILED,
+                          f"Date {cur.isoformat()} breaks the {'ascending' if ascending else 'descending'} order "
+                          f"(previous row: {prev.isoformat()}).",
+                          "A digit may have been misread; compare the date with the source.", table=t, row=r, col=c,
+                          extracted=cur.isoformat(), expected=f"{'on or after' if ascending else 'on or before'} {prev.isoformat()}")
+            self._passed("date_order", t, len(pairs) - len(bad), len(pairs), f"Dates in '{t.columns[c]}' in order")
+
+
 def summarise(issues: Iterable[ValidationIssue]) -> dict[str, int]:
     c = Counter(i.severity for i in issues)
     return {k: c.get(k, 0) for k in ("critical", "warning", "info", "passed")}
+
+
+_VERIFIED = re.compile(r"(\d+) of (\d+) verified")
+
+
+def check_summary(issues: Iterable[ValidationIssue]) -> list[dict[str, Any]]:
+    """Per check: how many items were looked at and how many were correct.
+
+    A passed finding of the form 'n of m verified' counts n correct items; any other passed finding counts one.
+    Critical and warning findings each count one item that failed. Informational findings are not counted.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for i in issues:
+        if i.severity == "info":
+            continue
+        c = out.setdefault(i.check, {"check": i.check, "checked": 0, "passed": 0})
+        if i.severity == "passed":
+            m = _VERIFIED.search(i.explanation)
+            ok = int(m.group(1)) if m else 1
+            c["passed"] += ok
+            c["checked"] += ok
+        else:
+            c["checked"] += 1
+    return sorted(out.values(), key=lambda c: (c["passed"] == c["checked"], c["check"]))

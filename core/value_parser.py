@@ -34,6 +34,9 @@ _TEXT_DATE_MDY = re.compile(r"^\s*([A-Za-z]{3,9})\.?[\s\-/.]+(\d{1,2})(?:st|nd|r
 
 # OCR confusions that are safe to repair *only* inside cells of a numeric column.
 _OCR_DIGIT_FIX = str.maketrans({"O": "0", "o": "0", "D": "0", "l": "1", "I": "1", "|": "1", "S": "5", "B": "8"})
+_SWAP_SEPARATORS = str.maketrans({",": ".", ".": ","})
+# Invisible / non-standard spaces that survive PDF text extraction.
+_HIDDEN_CHARS = re.compile(r"[  -​  　﻿­]")
 
 
 @dataclass(frozen=True)
@@ -80,11 +83,16 @@ def _normalise_digits(num: str) -> Optional[tuple[str, int]]:
     return s, 0
 
 
-def parse_number(text: Optional[str]) -> Optional[ParsedNumber]:
-    """Parse a cell as a number. Handles currency, thousands separators, (negatives), %, CR/DR."""
+def parse_number(text: Optional[str], decimal_comma: bool = False) -> Optional[ParsedNumber]:
+    """Parse a cell as a number. Handles currency, thousands separators, (negatives), %, CR/DR.
+
+    decimal_comma=True reads European numbers: '1.234,56' -> 1234.56 and '1.234' -> 1234.
+    """
     if text is None:
         return None
     t = str(text).strip()
+    if decimal_comma:
+        t = t.translate(_SWAP_SEPARATORS)
     if not t or len(t) > 40:
         return None
     m = _NUM_RE.match(t)
@@ -112,6 +120,13 @@ def parse_number(text: Optional[str]) -> Optional[ParsedNumber]:
     cur = m.group("cur1") or m.group("cur2")
     drcr = (m.group("drcr") or "").upper() or None
     return ParsedNumber(val, bool(m.group("pct")), style, cur, drcr, decimals)
+
+
+def clean_spaces(text: Optional[str]) -> str:
+    """normalise_text plus removal of non-breaking, zero-width and other hidden characters."""
+    if text is None:
+        return ""
+    return normalise_text(_HIDDEN_CHARS.sub(lambda m: "" if m.group(0) in "​﻿­" else " ", str(text)))
 
 
 def ocr_repair_number(text: str) -> Optional[tuple[ParsedNumber, str]]:

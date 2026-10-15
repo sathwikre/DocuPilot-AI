@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Callable, Optional
 
@@ -33,7 +34,22 @@ _MONEY_ROLES = {"debit", "credit", "balance", "amount", "unit_price", "net_amoun
 _NUMERIC_LIKE = re.compile(r"[\(\-]?\s*[$€£₹]?\s*\d[\d.,'\s]*\d\s*\)?\s*%?")
 
 
-def _is_summary_row(row: list[str]) -> Optional[str]:
+@dataclass(frozen=True)
+class TypingOptions:
+    """How cells become typed values. The defaults are the engine's normal behaviour; the clean-up checklist
+    (core.cleanup) switches them on or off."""
+
+    numbers: bool = True          # numeric text -> real numbers
+    dates: bool = True            # date text -> real dates
+    leading_zeros: bool = True    # identifier columns stay text (keeps 000123)
+    ocr_digits: bool = True       # O->0, l->1 ... repairs inside numeric columns of OCR rows
+    drcr_sign: bool = False       # '120.00 Dr' -> -120, '120.00 Cr' -> +120
+    decimal_comma: bool = False   # European 1.234,56
+    month_first: bool = False     # ambiguous 03/04/2026 -> March 4
+    zero_blanks: bool = False     # blank data cells in numeric columns -> 0
+
+
+def is_summary_row(row: list[str]) -> Optional[str]:
     texts = [c for c in row if c and parse_number(c) is None and parse_date(c) is None]
     if not texts:
         return None
@@ -45,13 +61,25 @@ def _is_summary_row(row: list[str]) -> Optional[str]:
     return None
 
 
-def type_table(t: LogicalTable, llm_mapper: Optional[Callable] = None) -> None:
+def is_identifier_column(role: Optional[str], vals: list[str]) -> bool:
+    """IDs, codes and zero-padded numbers: kept as text so Excel does not drop leading zeros."""
+    return role in _ID_ROLES or any(re.fullmatch(r"0\d+", v) for v in vals)
+
+
+def column_order(vals: list[str], opts: TypingOptions) -> Optional[str]:
+    return infer_date_order(vals) or ("MDY" if opts.month_first else None)
+
+
+def type_table(t: LogicalTable, llm_mapper: Optional[Callable] = None, opts: TypingOptions = TypingOptions()) -> None:
     """Populate columns, roles, row kinds, col_types, values and cell_notes in place."""
     display, roles, ops = normalise_headers(t.original_header, llm_mapper=llm_mapper)
     t.columns, t.roles, t.header_ops = display, roles, ops
 
+    def num(v: str):
+        return parse_number(v, decimal_comma=opts.decimal_comma)
+
     for i, row in enumerate(t.rows):
-        label = _is_summary_row(row)
+        label = is_summary_row(row)
         if label:
             t.row_meta[i].kind = "summary"
             t.row_meta[i].ops.append(f"classified as summary row ('{label}'); excluded from line-item checks")
@@ -65,16 +93,16 @@ def type_table(t: LogicalTable, llm_mapper: Optional[Callable] = None) -> None:
             col_types.append("empty")
             continue
         # Identifiers stay text even when they look numeric (keeps leading zeros, no thousands formatting).
-        if t.roles[ci] in _ID_ROLES or any(re.fullmatch(r"0\d+", v) for v in vals):
+        if opts.leading_zeros and is_identifier_column(t.roles[ci], vals):
             col_types.append("text")
-            if any(parse_number(v) for v in vals):
+            if any(num(v) for v in vals):
                 t.header_ops.append(f"'{t.columns[ci]}' treated as an identifier and kept as text")
             continue
-        nums = [parse_number(v) for v in vals]
+        nums = [num(v) for v in vals]
         ok_num = [n for n in nums if n is not None]
         # OCR repairs count towards the type decision, so a column is not misclassified by a few misreads.
-        repaired = sum(1 for v, n in zip(vals, nums) if n is None and ocr_repair_number(v))
-        order = infer_date_order(vals)
+        repaired = sum(1 for v, n in zip(vals, nums) if n is None and ocr_repair_number(v)) if opts.ocr_digits else 0
+        order = column_order(vals, opts)
         dates = [parse_date(v, order) for v in vals]
         ok_date = [d for d in dates if d is not None]
         n = len(vals)
@@ -82,8 +110,11 @@ def type_table(t: LogicalTable, llm_mapper: Optional[Callable] = None) -> None:
         # numeric column, so a few misreads cannot silently turn a money column into text.
         numeric_like = sum(1 for v, p in zip(vals, nums) if p is None and _NUMERIC_LIKE.fullmatch(v))
         if len(ok_date) / n >= 0.8:
-            col_types.append("date")
+            col_types.append("date" if opts.dates else "text")
         elif (len(ok_num) + max(repaired, numeric_like)) / n >= (0.5 if t.roles[ci] in _MONEY_ROLES else 0.8) and ok_num:
+            if not opts.numbers:
+                col_types.append("text")
+                continue
             if ok_num and all(x.is_percent for x in ok_num):
                 col_types.append("percent")
             elif ok_num and all(x.decimals == 0 for x in ok_num) and not any("." in v for v in vals):
@@ -95,7 +126,7 @@ def type_table(t: LogicalTable, llm_mapper: Optional[Callable] = None) -> None:
     t.col_types = col_types
     t.header_ops.extend(refine_roles_by_values(t.roles, col_types))
 
-    orders = {ci: infer_date_order([t.rows[r][ci] for r in data_idx]) for ci in range(ncols) if col_types[ci] == "date"}
+    orders = {ci: column_order([t.rows[r][ci] for r in data_idx], opts) for ci in range(ncols) if col_types[ci] == "date"}
     values: list[list[Any]] = []
     notes: dict[tuple[int, int], list[str]] = {}
     for ri, row in enumerate(t.rows):
@@ -104,11 +135,15 @@ def type_table(t: LogicalTable, llm_mapper: Optional[Callable] = None) -> None:
         for ci, raw in enumerate(row):
             ctype = col_types[ci]
             if not raw:
-                out.append(None)
+                if opts.zero_blanks and meta.kind == "data" and ctype in ("number", "integer"):
+                    out.append(Decimal(0))
+                    meta.ops.append(f"blank '{t.columns[ci]}' written as 0")
+                else:
+                    out.append(None)
                 continue
             if ctype in ("number", "integer", "percent"):
-                p = parse_number(raw)
-                if p is None and meta.method.startswith("ocr"):
+                p = num(raw)
+                if p is None and opts.ocr_digits and meta.method.startswith("ocr"):
                     rep = ocr_repair_number(raw)
                     if rep:
                         p = rep[0]
@@ -121,7 +156,10 @@ def type_table(t: LogicalTable, llm_mapper: Optional[Callable] = None) -> None:
                 v: Decimal = p.value
                 if p.is_percent:
                     v = v / Decimal(100)
-                if p.drcr:
+                if p.drcr and opts.drcr_sign:
+                    v = -abs(v) if p.drcr == "DR" else abs(v)
+                    meta.ops.append(f"'{raw}': {p.drcr} written as {'negative' if p.drcr == 'DR' else 'positive'}")
+                elif p.drcr:
                     meta.ops.append(f"'{raw}' carries a {p.drcr} marker; sign left as printed")
                 out.append(v)
             elif ctype == "date":
@@ -138,7 +176,7 @@ def type_table(t: LogicalTable, llm_mapper: Optional[Callable] = None) -> None:
     t.values = values
     t.cell_notes = notes
     for ci, ctype in enumerate(col_types):
-        if ctype == "date" and orders.get(ci) is None:
+        if ctype == "date" and orders.get(ci) is None and not opts.month_first:
             sample = [t.rows[r][ci] for r in data_idx if t.rows[r][ci]]
             if any(re.match(r"^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$", s) for s in sample):
                 t.warnings.append(f"Column '{t.columns[ci]}': day/month order could not be proven from the data; "

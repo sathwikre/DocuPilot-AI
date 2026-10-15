@@ -54,6 +54,7 @@ CHECK_LABELS = {
     "repeated_header": "Repeated header", "table_merge": "Multi-page merge", "row_width": "Row width",
     "boundary_duplicate": "Page-boundary duplicate", "header_detection": "Header detection",
     "page_processing": "Page processing", "ocr_confidence": "OCR confidence", "tables_found": "Table detection",
+    "date_order": "Date order",
 }
 DOC_TYPES = {"invoice": "Invoice", "bank_statement": "Bank statement", "purchase_order": "Purchase order",
              "inventory": "Inventory record", "financial_report": "Financial report", "generic": "Tabular document"}
@@ -78,7 +79,7 @@ def inject_css() -> None:
 
 def brand() -> str:
     return ('<div class="dp-brand"><div class="dp-brand-mark">' + icon("logo") + '</div>'
-            '<div><div class="dp-brand-name">DocuPilot AI</div><div class="dp-brand-sub">DOCUMENT → EXCEL AGENT</div></div></div>')
+            '<div><div class="dp-brand-name">DocuPilot AI</div><div class="dp-brand-sub">PDF · SCAN · PHOTO → EXCEL</div></div></div>')
 
 
 def section(title: str, ic: str = "sparkles") -> str:
@@ -201,12 +202,99 @@ def html_table(headers: Sequence[str], rows: Sequence[Sequence[Any]], num_cols: 
                widths: Optional[Sequence[str]] = None) -> str:
     style = ' style="table-layout:fixed"' if widths else ""
     cols = "<colgroup>" + "".join(f'<col style="width:{w}">' for w in widths) + "</colgroup>" if widths else ""
-    out = (f'<table class="dp-table"{style}>{cols}<thead><tr>' + "".join(f"<th>{esc(h)}</th>" for h in headers)
+    out = (f'<div class="dp-table-scroll" role="region" aria-label="Scrollable data table" tabindex="0">'
+           f'<table class="dp-table"{style}>{cols}<thead><tr>' + "".join(f"<th>{esc(h)}</th>" for h in headers)
            + "</tr></thead><tbody>")
     for r in rows:
         out += "<tr>" + "".join(
             f'<td class="num">{c}</td>' if i in num_cols else f"<td>{c}</td>" for i, c in enumerate(r)) + "</tr>"
-    return out + "</tbody></table>"
+    return out + "</tbody></table></div>"
+
+
+def stat(label: str, value: Any, tone: str = "") -> str:
+    """A compact number tile. tone: '' | bad | warn | good."""
+    return f'<div class="dp-stat {tone}"><div class="v">{esc(value)}</div><div class="l">{esc(label)}</div></div>'
+
+
+def page_strip(reports) -> str:
+    """One square per page, coloured by how it was read, with a legend."""
+    cells = []
+    for p in reports:
+        if p.status == "failed":
+            mode, how = "failed", "could not be read"
+        elif p.ocr_used:
+            mode = "ocr"
+            how = f"read by OCR, {p.ocr_confidence:.0%} confidence" if p.ocr_confidence else "read by OCR"
+        elif p.kind == "empty":
+            mode, how = "blank", "blank page"
+        else:
+            mode, how = "digital", "text read directly"
+        cells.append(f'<span class="sq {mode}" title="Page {p.page}: {esc(how)} · {p.tables_found} table piece(s)"></span>')
+    legend = "".join(f'<span><i class="sq {m}"></i>{t}</span>' for m, t in
+                     (("digital", "text read directly"), ("ocr", "read by OCR"), ("blank", "blank"), ("failed", "failed")))
+    return (f'<div class="dp-strip" aria-label="How each page was read">{"".join(cells)}</div>'
+            f'<div class="dp-legend">{legend}</div>')
+
+
+def _display(v: Any, ctype: str) -> str:
+    from datetime import date as _date
+    from decimal import Decimal as _Dec
+    if v is None:
+        return ""
+    if isinstance(v, _Dec):
+        if ctype == "percent":
+            return f"{(v * 100).normalize():f}%"
+        return f"{v:,}"
+    if isinstance(v, _date):
+        return v.isoformat()
+    return str(v)
+
+
+def preview_table(t, issues, limit: int = 25) -> str:
+    """The first `limit` rows of a table with flagged cells coloured (tooltip = the finding)."""
+    flags: dict[tuple[int, int], tuple[str, str]] = {}
+    for i in issues:
+        if i.table_id != t.table_id or i.row_index is None or i.severity not in ("critical", "warning"):
+            continue
+        key = (i.row_index, i.col_index if i.col_index is not None else 0)
+        if key not in flags or i.severity == "critical":
+            flags[key] = (i.severity, i.explanation)
+    numeric = {c for c, ty in enumerate(t.col_types) if ty in ("number", "integer", "percent")}
+    head = "".join(f'<th class="{"num" if c in numeric else ""}">{esc(h)}</th>' for c, h in enumerate(t.columns))
+    body = []
+    for r in range(min(limit, len(t.values))):
+        tds = []
+        for c, v in enumerate(t.values[r]):
+            sev, msg = flags.get((r, c), ("", ""))
+            cls = " ".join(x for x in ("num" if c in numeric else "", sev) if x)
+            tip = f' title="{esc(msg)}"' if msg else ""
+            tds.append(f'<td class="{cls}"{tip}>{esc(_display(v, t.col_types[c] if c < len(t.col_types) else ""))}</td>')
+        kind = ' class="total"' if t.row_meta[r].kind == "summary" else ""
+        body.append(f"<tr{kind}>{''.join(tds)}</tr>")
+    pages = f"page {t.pages[0]}" if len(t.pages) == 1 else f"pages {t.pages[0]}–{t.pages[-1]}"
+    more = (f'<p class="dp-more">Showing the first {limit} of {len(t.values)} rows. The Excel file has all of them.</p>'
+            if len(t.values) > limit else "")
+    return (f'<h4 class="dp-tbl-title">{esc(t.title or t.table_id)} <span>· {len(t.values)} rows × {t.ncols} columns · '
+            f'{pages}</span></h4><div class="dp-preview"><table><thead><tr>{head}</tr></thead>'
+            f'<tbody>{"".join(body)}</tbody></table></div>{more}')
+
+
+def check_grid(summary: Sequence[dict]) -> str:
+    items = []
+    for c in summary:
+        ok = c["passed"] == c["checked"]
+        items.append(f'<li><span>{esc(CHECK_LABELS.get(c["check"], c["check"]))}</span>'
+                     f'<b class="{"good" if ok else "bad"}">{c["passed"]}/{c["checked"]}</b></li>')
+    return f'<ul class="dp-checkgrid">{"".join(items)}</ul>'
+
+
+def issue_line(i) -> str:
+    """One-line finding for the results list."""
+    where = " · ".join(str(x) for x in (i.table_id, f"page {i.page}" if i.page else "",
+                                        f"row {i.row_id}" if i.row_id else "", i.column) if x)
+    label = {"critical": "error", "warning": "warning", "info": "info", "passed": "passed"}[i.severity]
+    return (f'<li class="dp-line {i.severity}"><b>{label}</b>{esc(i.explanation)}'
+            f'{f"<span>{esc(where)}</span>" if where else ""}</li>')
 
 
 def status_row(dot: str, title: str, sub: str) -> str:

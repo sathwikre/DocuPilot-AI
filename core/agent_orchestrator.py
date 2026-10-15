@@ -12,18 +12,20 @@ Progress callbacks report real work done (stage, page counters, elapsed time).
 """
 from __future__ import annotations
 
+import copy
+import dataclasses
 import time
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from config.settings import SETTINGS
-from core import ocr_engine
+from core import cleanup, ocr_engine
 from core.data_normalizer import type_table
 from core.document_inspector import inspect_document, open_document, pdf_bytes_for
 from core.excel_exporter import build_workbook
 from core.field_extractor import dedupe_fields, detect_doc_type, fields_from_lines, fields_from_summary_rows
-from core.models import DocumentRejected, PageReport, ProcessingResult, RawTable, Word
+from core.models import DocumentRejected, LogicalTable, PageReport, ProcessingResult, RawTable, Word
 from core.pdf_extractor import extract_digital_page, open_plumber, page_words
 from core.table_detector import words_text
 from core.table_merger import build_logical_tables
@@ -33,6 +35,8 @@ from utils.file_validation import sha256_bytes, validate_upload
 from utils.logging_config import get_logger, log_event
 
 log = get_logger("orchestrator")
+
+OCR_MODES = ("auto", "force", "off")
 
 STAGES = [
     "Document inspection",
@@ -74,10 +78,17 @@ class _PageWork:
 class AgentOrchestrator:
     """Runs the full document-to-Excel pipeline."""
 
-    def __init__(self, use_llm: bool = False, progress: Optional[ProgressCallback] = None, ocr_enabled: bool = True):
+    def __init__(self, use_llm: bool = False, progress: Optional[ProgressCallback] = None, ocr_enabled: bool = True,
+                 ocr_mode: str = "auto", remove_repeats: bool = True):
+        """ocr_mode: 'auto' (only pages that are pictures), 'force' (every page with content) or 'off'.
+        remove_repeats: tick the 'duplicates' clean-up option for the first build."""
+        if ocr_mode not in OCR_MODES:
+            raise ValueError(f"ocr_mode must be one of {OCR_MODES}")
         self.use_llm = use_llm
         self.progress = progress
-        self.ocr_enabled = ocr_enabled
+        self.ocr_mode = "off" if not ocr_enabled else ocr_mode
+        self.ocr_enabled = self.ocr_mode != "off"
+        self.remove_repeats = remove_repeats
         self._t0 = 0.0
         self._stage_t0 = 0.0
         self.timings: dict[str, float] = {}
@@ -111,7 +122,16 @@ class AgentOrchestrator:
         safe_name, kind = validate_upload(filename, data)
         file_hash = sha256_bytes(data)
         doc = open_document(data, kind)
+        pages_total = None
         try:
+            if doc.page_count > SETTINGS.max_pages:
+                # Convert the first max_pages pages rather than refusing the whole file; the result says so.
+                pages_total = doc.page_count
+                doc.select(list(range(SETTINGS.max_pages)))
+                warnings.append(f"The file has {pages_total} pages; only the first {SETTINGS.max_pages} were converted "
+                                f"(the page limit). Split the file to convert the rest.")
+                if kind == "pdf":
+                    data = pdf_bytes_for(doc)
             info = inspect_document(doc, safe_name, kind)
             n = info.page_count
             self._end(0, f"{n} page{'s' if n != 1 else ''}, {kind.upper()}")
@@ -121,9 +141,8 @@ class AgentOrchestrator:
             self._begin(1, "classifying pages", n)
             works = [_PageWork(PageReport(page=p.number, kind=p.kind, warnings=list(p.notes))) for p in info.pages]
             counts = Counter(p.kind for p in info.pages)
-            needs_ocr = [p.number for p in info.pages if p.kind in ("scanned", "mixed") or (p.kind == "digital" and p.rotation)]
-            if needs_ocr and not self.ocr_enabled:
-                warnings.append("OCR is disabled; scanned pages cannot be read.")
+            if not self.ocr_enabled and any(p.kind in ("scanned", "mixed") for p in info.pages):
+                warnings.append("OCR was switched off; pages that are pictures could not be read.")
             self._end(1, ", ".join(f"{v} {k}" for k, v in counts.items()))
 
             pdf_bytes = pdf_bytes_for(doc) if kind == "image" else data
@@ -141,22 +160,24 @@ class AgentOrchestrator:
         raws = [t for w in works for t in w.tables]
         running = self._running_text(works)
         tables, decisions = build_logical_tables(raws, running)
+        base_tables = copy.deepcopy(tables)  # kept untyped so the checklist can rebuild the workbook later
         llm = None
         llm_notes: list[str] = []
         if self.use_llm:
             llm = self._make_llm(llm_notes)
-        for t in tables:
-            type_table(t, llm_mapper=llm.map_headers if llm else None)
-        fields = []
-        for w in works:
-            fields.extend(fields_from_lines(w.lines, w.report.page))
-        for t in tables:
-            fields.extend(fields_from_summary_rows(t))
-        fields = dedupe_fields(fields)
+        mapper = llm.map_headers if llm else None
+        reference = _typed_reference(base_tables, mapper)
+        line_fields = [f for w in works for f in fields_from_lines(w.lines, w.report.page)]
         all_text = " ".join(words_text(ln) for w in works for ln in w.lines) + " " + " ".join(
-            " ".join(t.original_header) + " " + (t.title or "") for t in tables)
+            " ".join(t.original_header) + " " + (t.title or "") for t in reference)
         first_line = next((words_text(ln) for w in works for ln in w.lines), "")
-        doc_type = detect_doc_type(all_text, tables, first_line)
+        doc_type = detect_doc_type(all_text, reference, first_line)
+        options = cleanup.default_selection(self.remove_repeats)
+        cleaned = cleanup.clean(base_tables, options, {t.table_id: t.col_types for t in reference})
+        tables = cleaned.tables
+        for t in tables:
+            type_table(t, llm_mapper=mapper, opts=cleanup.typing_options(options))
+        fields = _all_fields(line_fields, tables)
         merged = sum(d.merged for d in decisions)
         self._end(4, f"{len(raws)} fragment(s) -> {len(tables)} table(s); {merged} page merge(s)")
         if llm:
@@ -173,8 +194,12 @@ class AgentOrchestrator:
             file_name=safe_name, file_hash=file_hash, doc_info=info, doc_type=doc_type, page_reports=reports,
             tables=tables, issues=issues, fields=fields, merge_decisions=decisions, stage_timings=self.timings,
             elapsed=0.0, warnings=warnings + info.warnings, llm_used=bool(llm and llm.calls), llm_model=llm.model if llm else None,
-            llm_notes=llm_notes,
+            llm_notes=llm_notes, options=options, removed_rows=cleaned.removed, base_tables=base_tables,
+            line_fields=line_fields, ocr_mode=self.ocr_mode, pages_total=pages_total,
         )
+        reference_issues = Validator(SETTINGS.money_tolerance).validate(reference, _all_fields(line_fields, reference),
+                                                                        doc_type, reports)
+        result.checklist = cleanup.detect(reference, reference_issues)
 
         # 6. Excel
         self._begin(6, "building workbook")
@@ -193,13 +218,13 @@ class AgentOrchestrator:
         for i, w in enumerate(works):
             p = info.pages[i]
             t0 = time.time()
-            if p.kind in ("scanned", "mixed") or p.rotation:
+            if self._wants_ocr(p) and self.ocr_enabled:
                 self._emit(2, f"running OCR on page {i + 1} of {n}", i, n)
             try:
                 if p.kind == "empty":
                     w.report.method = "none"
-                elif p.kind in ("scanned", "mixed") or p.rotation:
-                    if p.kind == "mixed":
+                elif self._wants_ocr(p):
+                    if p.kind in ("mixed", "digital"):
                         w.words = page_words(plumber.pages[i])  # keep the native layer for comparison
                     self._ocr(doc, i, w)
                 else:
@@ -278,6 +303,11 @@ class AgentOrchestrator:
         self._end(3, f"{total} table fragment(s) on {sum(bool(w.tables) for w in works)} page(s)")
 
     # ------------------------------------------------------------------ helpers
+    def _wants_ocr(self, p) -> bool:
+        if p.kind == "empty":
+            return False
+        return self.ocr_mode == "force" or p.kind in ("scanned", "mixed") or bool(p.rotation)
+
     @staticmethod
     def _better(a: list[RawTable], b: list[RawTable]) -> bool:
         """True when table list `a` is clearly better than `b`."""
@@ -317,10 +347,52 @@ class AgentOrchestrator:
             return None
 
 
+def _typed_reference(base: list[LogicalTable], mapper=None) -> list[LogicalTable]:
+    """The tables typed with the engine's default options and no clean-up: what the document itself contains.
+    The checklist counts problems on these, so the counts do not change as boxes are ticked."""
+    ref = copy.deepcopy(base)
+    for t in ref:
+        type_table(t, llm_mapper=mapper)
+    return ref
+
+
+def _all_fields(line_fields, tables) -> list:
+    return dedupe_fields(list(line_fields) + [f for t in tables for f in fields_from_summary_rows(t)])
+
+
+def rebuild(result: ProcessingResult, selected) -> ProcessingResult:
+    """Re-apply the clean-up checklist to a finished result and rebuild the workbook.
+
+    Runs only the cheap steps (clean-up, typing, validation, Excel) on the stored reconstructed tables; the
+    document is not read again. Returns a new result; the one passed in is not changed.
+    """
+    t0 = time.time()
+    unknown = set(selected) - set(cleanup.OPTION_IDS)
+    if unknown:
+        raise ValueError(f"unknown clean-up option(s): {', '.join(sorted(unknown))}")
+    options = frozenset(selected)
+    reference = _typed_reference(result.base_tables)
+    cleaned = cleanup.clean(result.base_tables, options, {t.table_id: t.col_types for t in reference})
+    for t in cleaned.tables:
+        type_table(t, opts=cleanup.typing_options(options))
+    fields = _all_fields(result.line_fields, cleaned.tables)
+    issues = Validator(SETTINGS.money_tolerance).validate(cleaned.tables, fields, result.doc_type, result.page_reports)
+    out = dataclasses.replace(result, tables=cleaned.tables, fields=fields, issues=issues, options=options,
+                              removed_rows=cleaned.removed)
+    out.excel_bytes = build_workbook(out)
+    out.rebuild_seconds = round(time.time() - t0, 3)
+    log_event(log, "workbook rebuilt", file_hash=result.file_hash[:12], options=len(options),
+              seconds=out.rebuild_seconds)
+    return out
+
+
 def process_document(data: bytes, filename: str, use_llm: bool = False,
-                     progress: Optional[ProgressCallback] = None) -> ProcessingResult:
+                     progress: Optional[ProgressCallback] = None, ocr_mode: str = "auto",
+                     remove_repeats: bool = True) -> ProcessingResult:
     """Functional entry point used by the UI, scripts and tests."""
-    return AgentOrchestrator(use_llm=use_llm, progress=progress).run(data, filename)
+    return AgentOrchestrator(use_llm=use_llm, progress=progress, ocr_mode=ocr_mode,
+                             remove_repeats=remove_repeats).run(data, filename)
 
 
-__all__ = ["AgentOrchestrator", "ProgressEvent", "STAGES", "process_document", "DocumentRejected"]
+__all__ = ["AgentOrchestrator", "OCR_MODES", "ProgressEvent", "STAGES", "process_document", "rebuild",
+           "DocumentRejected"]

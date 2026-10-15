@@ -9,7 +9,7 @@ import pandas as pd
 from core.models import ProcessingResult
 from ui.components import CHECK_LABELS
 
-SEV_COLORS = {"Critical": "#f43f5e", "Warning": "#f59e0b", "Informational": "#3b82f6", "Passed": "#10b981"}
+SEV_COLORS = {"Critical": "#9b2c2c", "Warning": "#d68f2a", "Informational": "#3b6e8f", "Passed": "#2b7a73"}
 SEV_ORDER = list(SEV_COLORS)
 _SEV_NAME = {"critical": "Critical", "warning": "Warning", "info": "Informational", "passed": "Passed"}
 
@@ -17,11 +17,11 @@ _SEV_NAME = {"critical": "Critical", "warning": "Warning", "info": "Informationa
 def _style(chart: alt.Chart, height: int = 210) -> alt.Chart:
     return (chart.properties(height=height, background="transparent")
             .configure_view(strokeWidth=0)
-            .configure_axis(labelColor="#64748b", titleColor="#94a3b8", gridColor="#eef0f6",
-                            domainColor="#e2e8f0", tickColor="#e2e8f0",
+            .configure_axis(labelColor="#8a7462", titleColor="#a08a76", gridColor="#ece2d1",
+                            domainColor="#e3d6c1", tickColor="#e3d6c1",
                             labelFont="Segoe UI", titleFont="Segoe UI", labelFontSize=11, titleFontSize=11)
-            .configure_legend(labelColor="#475569", titleColor="#94a3b8", labelFont="Segoe UI", orient="bottom")
-            .configure_title(color="#0f172a"))
+            .configure_legend(labelColor="#5a4738", titleColor="#a08a76", labelFont="Segoe UI", orient="bottom")
+            .configure_title(color="#2a1f17"))
 
 
 def severity_chart(result: ProcessingResult) -> alt.Chart:
@@ -34,7 +34,7 @@ def severity_chart(result: ProcessingResult) -> alt.Chart:
     bars = base.mark_bar(cornerRadiusEnd=6, height=18).encode(
         color=alt.Color("Severity:N", scale=alt.Scale(domain=SEV_ORDER, range=list(SEV_COLORS.values())), legend=None),
         tooltip=["Severity", "Findings"])
-    text = base.mark_text(align="left", dx=6, color="#0f172a", fontSize=12, fontWeight="bold").encode(text="Findings:Q")
+    text = base.mark_text(align="left", dx=6, color="#2a1f17", fontSize=12, fontWeight="bold").encode(text="Findings:Q")
     return _style(bars + text, 190)
 
 
@@ -48,7 +48,7 @@ def rows_by_page_chart(result: ProcessingResult) -> alt.Chart:
     chart = alt.Chart(df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
         x=alt.X("Page:O", title="Source page", axis=alt.Axis(labelAngle=0)),
         y=alt.Y("sum(Rows):Q", title=None),
-        color=alt.Color("Table:N", scale=alt.Scale(range=["#6366f1", "#06b6d4", "#8b5cf6", "#0ea5e9", "#a855f7", "#14b8a6"]),
+        color=alt.Color("Table:N", scale=alt.Scale(range=["#6b4226", "#e3a63b", "#2b7a73", "#b4621c", "#3b6e8f", "#a07a5a"]),
                         legend=alt.Legend(title=None, orient="bottom")),
         tooltip=["Table", "Page", "Rows"])
     return _style(chart, 210)
@@ -69,7 +69,7 @@ def checks_chart(result: ProcessingResult) -> alt.Chart:
 
 def stage_chart(result: ProcessingResult) -> alt.Chart:
     df = pd.DataFrame({"Stage": list(result.stage_timings), "Seconds": list(result.stage_timings.values())})
-    chart = alt.Chart(df).mark_bar(cornerRadiusEnd=4, height=14, color="#6366f1").encode(
+    chart = alt.Chart(df).mark_bar(cornerRadiusEnd=4, height=14, color="#6b4226").encode(
         y=alt.Y("Stage:N", sort=None, title=None), x=alt.X("Seconds:Q", title="seconds"),
         tooltip=["Stage", alt.Tooltip("Seconds:Q", format=".2f")])
     return _style(chart, 200)

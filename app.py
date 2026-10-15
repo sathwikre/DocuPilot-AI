@@ -18,14 +18,15 @@ import pymupdf as fitz
 import streamlit as st
 
 from config.settings import SETTINGS
-from core.agent_orchestrator import STAGES, AgentOrchestrator, ProgressEvent
+from core import cleanup
+from core.agent_orchestrator import STAGES, AgentOrchestrator, ProgressEvent, rebuild
 from core.models import DocumentRejected, LogicalTable, ProcessingResult
-from core.ocr_engine import ocr_installed_backend
-from models.local_llm import get_llm_status
+from core.validator import check_summary
 from ui import charts
 from ui.components import (
-    CHECK_LABELS, DOC_TYPES, SEVERITY_LABEL, brand, chip, empty_state, esc, html_table, icon, inject_css, issue_card,
-    kpi, kpi_grid, note, page_title, render, section, stage_tracker, state_card, status_row, workflow,
+    CHECK_LABELS, DOC_TYPES, SEVERITY_LABEL, brand, check_grid, chip, empty_state, esc, html_table, icon, inject_css,
+    issue_card, issue_line, kpi, kpi_grid, note, page_strip, page_title, preview_table, render, section, stage_tracker,
+    stat, state_card,
 )
 from utils.file_validation import FileValidationError, sanitize_filename, sha256_bytes
 from utils.history import clear_history, load_history, record_run
@@ -41,13 +42,13 @@ NAV = ["Home", "Overview", "Table Explorer", "Validation Center", "Export Center
 NAV_ICONS = {"Home": ":material/home:", "Overview": ":material/space_dashboard:", "Table Explorer": ":material/table_view:",
              "Validation Center": ":material/verified:", "Export Center": ":material/download:", "History": ":material/history:"}
 
-st.set_page_config(page_title="DocuPilot AI", page_icon="🧭", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="DocuPilot AI", page_icon="🧭", layout="wide", initial_sidebar_state="auto")
 inject_css()
 
 ss = st.session_state
 ss.setdefault("results", {})          # file hash -> ProcessingResult (kept for this browser session only)
 ss.setdefault("active", None)         # hash of the result being viewed
-ss.setdefault("sample_choice", None)  # path of a selected sample document
+ss.setdefault("applied", None)        # seconds the last checklist rebuild took
 if "_goto" in ss:
     ss["nav"] = ss.pop("_goto")
 ss.setdefault("nav", "Home")
@@ -62,12 +63,6 @@ def goto(page: str) -> None:
     st.rerun()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
-def llm_status_cached() -> dict:
-    s = get_llm_status()
-    return {"available": s.available, "selected": s.selected, "error": s.error, "models": s.models}
-
-
 # =============================================================================== sidebar
 with st.sidebar:
     render(brand())
@@ -80,15 +75,6 @@ with st.sidebar:
         m = res.metrics()
         render(f'<div class="dp-doc-mini"><b>{esc(res.file_name)}</b>{esc(DOC_TYPES.get(res.doc_type, res.doc_type))} · '
                f'{m["pages"]} pages · {m["tables"]} tables · {m["rows"]} rows</div>')
-    render('<div class="dp-side-label">Engine status</div>')
-    llm = llm_status_cached()
-    ocr_b = ocr_installed_backend()
-    rows = [status_row("ok", "Native PDF extraction", "pdfplumber + PyMuPDF")]
-    rows.append(status_row("ok" if "not installed" not in ocr_b else "off", "OCR", ocr_b))
-    rows.append(status_row("ok" if llm["available"] else "off", "Local LLM (optional)",
-                           f"Ollama · {llm['selected']}" if llm["available"] else (llm["error"] or "not available")))
-    rows.append(status_row("ok", "Privacy", "Processed on this machine · no external APIs · telemetry off"))
-    render('<div class="dp-status">' + "".join(rows) + "</div>")
 
 
 # =============================================================================== helpers
@@ -107,7 +93,7 @@ def doc_info_preview(name: str, data: bytes) -> tuple[str, Optional[int]]:
     return kind, pages
 
 
-def run_processing(name: str, data: bytes, use_llm: bool, holder) -> Optional[ProcessingResult]:
+def run_processing(name: str, data: bytes, ocr_mode: str, remove_repeats: bool, holder) -> Optional[ProcessingResult]:
     """Run the pipeline with a live, real-progress stage tracker."""
     state: dict[str, Any] = {"current": 0, "details": {}, "times": {}, "finished": set(), "units": (0, 0), "elapsed": 0.0}
     started = time.time()
@@ -133,7 +119,7 @@ def run_processing(name: str, data: bytes, use_llm: bool, holder) -> Optional[Pr
 
     holder.markdown(stage_tracker(STAGES, state, name), unsafe_allow_html=True)
     try:
-        result = AgentOrchestrator(use_llm=use_llm, progress=on_progress).run(data, name)
+        result = AgentOrchestrator(progress=on_progress, ocr_mode=ocr_mode, remove_repeats=remove_repeats).run(data, name)
     except (DocumentRejected, FileValidationError) as exc:
         state["failed"] = True
         state["details"][state["current"]] = str(exc)
@@ -196,81 +182,179 @@ def no_result_state(what: str) -> None:
 
 
 # =============================================================================== pages
+REPEATS = {"Yes, remove them": True, "No, keep them": False}
+OCR_CHOICES = {"Automatic": ("auto", "Only pages that are pictures are read by OCR (fastest)."),
+               "Always OCR": ("force", "Every page is read as a picture, even if it has a text layer."),
+               "Never": ("off", "Use the PDF text layer only; pages that are pictures are reported, not read.")}
+
+
 def page_home() -> None:
-    hero, panel = st.columns([1, 1.08], gap="large", vertical_alignment="center")
-    with hero:
-        checks = [("check", "Tables merged across pages, repeated headers removed"),
-                  ("check", "Line items, totals and running balances re-checked"),
-                  ("check", "Every row traced back to its source page")]
-        render('<div class="dp-hero"><span class="dp-eyebrow"><i>LOCAL</i> Document intelligence · no paid APIs</span>'
-               '<h1>Your documents.<br><span class="grad">Structured.<br>Verified. Ready.</span></h1>'
-               '<p>Turn complex documents into accurate spreadsheets with intelligent extraction and automated validation.</p>'
-               '<ul class="dp-checks">' + "".join(f"<li>{icon(ic)}<span>{esc(t)}</span></li>" for ic, t in checks)
-               + "</ul></div>")
+    render('<div class="dp-hero center"><span class="dp-eyebrow"><i>LOCAL</i> Runs on this computer · no paid APIs</span>'
+           '<h1>DocuPilot <span class="grad">AI</span></h1>'
+           '<p>Turn any PDF, scan or photo into a clean Excel workbook: tables found automatically, joined across pages, '
+           'checked for wrong totals, and ready to use.</p></div>')
 
-    with panel:
-        with st.container(key="upload_panel"):
-            render(section("Upload a document", "upload"))
-            up = st.file_uploader("Drop a PDF, scanned PDF or image", type=[e.lstrip(".") for e in SETTINGS.allowed_extensions],
-                                  key="uploader", label_visibility="collapsed")
-            render(f'<div class="dp-chips" style="margin:10px 0 16px">{chip("PDF", "violet", "file")}'
-                   f'{chip("Scanned PDF", "violet", "scan")}{chip("PNG · JPG · TIFF", "violet", "eye")}'
-                   f'{chip(f"Up to {SETTINGS.max_pages} pages", "cyan", "pages")}</div>')
-            render('<div class="dp-divider"><span>or try a sample document</span></div>')
-            sc = st.columns(len(SAMPLES))
-            for col, (label, (path, ic, tip)) in zip(sc, SAMPLES.items()):
-                if col.button(label, key=f"sample_{path.stem}", width="stretch", icon=ic, help=tip,
-                              disabled=not path.exists()):
-                    ss.sample_choice = str(path)
+    with st.container(key="upload_panel"):
+        up = st.file_uploader("Drop a PDF, scan or photo here, or click to choose one",
+                              type=[e.lstrip(".") for e in SETTINGS.allowed_extensions], key="uploader",
+                              label_visibility="collapsed")
+        with st.container(key="opts_row"):
+            o1, o2 = st.columns(2, gap="large")
+        with o1:
+            render('<div class="dp-label">Remove repeated rows?</div>')
+            rep = st.segmented_control("Remove repeated rows", list(REPEATS), default="Yes, remove them",
+                                       key="opt_repeats", label_visibility="collapsed") or "Yes, remove them"
+            render(f'<p class="dp-hint">{"A row exactly the same as an earlier one is left out and listed on a “Removed rows” sheet." if REPEATS[rep] else "Every row is kept, even if it appears twice (repeats are still flagged)."}</p>')
+        with o2:
+            render('<div class="dp-label">Scanned pages (OCR)</div>')
+            ocr_label = st.segmented_control("OCR mode", list(OCR_CHOICES), default="Automatic", key="opt_ocr",
+                                             label_visibility="collapsed") or "Automatic"
+            render(f'<p class="dp-hint">{OCR_CHOICES[ocr_label][1]}</p>')
 
-            name, data = None, None
-            if up is not None:
-                name, data = up.name, up.getvalue()
-                ss.sample_choice = None
-            elif ss.sample_choice:
-                p = Path(ss.sample_choice)
-                name, data = p.name, p.read_bytes()
+        name, data, start = None, None, False
+        if up is not None:
+            name, data = up.name, up.getvalue()
+        with st.container(horizontal=True, vertical_alignment="center", gap="small", key="samples_row"):
+            render('<span class="dp-samples-label">or try a sample:</span>')
+            for label, (path, ic, tip) in SAMPLES.items():
+                if st.button(label, key=f"sample_{path.stem}", icon=ic, help=tip, type="tertiary",
+                             disabled=not path.exists()):
+                    name, data, start = path.name, path.read_bytes(), True
 
-            proc_holder = st.empty()
-            if data is not None:
-                kind, pages = doc_info_preview(name, data)
-                h = sha256_bytes(data)
-                over = pages is not None and pages > SETTINGS.max_pages
-                pages_txt = f"{pages} page{'s' if pages != 1 else ''}" if pages else "page count unknown"
-                render(f'<div class="dp-file"><div class="ic">{icon("file")}</div>'
-                       f'<div class="meta"><b>{esc(sanitize_filename(name))}</b>'
-                       f'<span>{kind} · {len(data) / 1024:,.0f} KB · {pages_txt}</span></div>'
-                       f'{chip("Already processed", "passed", "check") if h in ss.results else ""}'
-                       f'{chip("Over page limit", "critical", "alert") if over else chip("Ready", "violet", "sparkles")}</div>')
-                llm_ok = llm_status_cached()["available"]
-                use_llm = st.toggle("Local LLM assist for ambiguous headers", value=False, disabled=not llm_ok,
-                                    help="Sends only column header names to your local Ollama model. Numbers and checks "
-                                         "stay deterministic. Off by default." if llm_ok else "Ollama is not running locally.")
-                if h in ss.results:
-                    b1, b2 = st.columns([1.4, 1])
-                    if b1.button("View results", type="primary", width="stretch", icon=":material/insights:"):
-                        ss.active = h
-                        goto("Overview")
-                    rerun = b2.button("Re-run extraction", width="stretch")
-                else:
-                    rerun = st.button("Start Extraction", type="primary", width="stretch", disabled=over,
-                                      icon=":material/bolt:")
-                if rerun:
-                    with proc_holder.container(key="process_panel"):
-                        tracker = st.empty()
-                        result = run_processing(name, data, use_llm, tracker)
-                    if result is not None:
-                        ss.results[h] = result
-                        ss.active = h
-                        record_run(result)
-                        time.sleep(0.6)
-                        goto("Overview")
-            else:
-                render(note("Files are processed on this computer. Nothing is uploaded to external services, and the "
-                            "processing history stores metrics only — never document contents.", "", "lock"))
+        proc_holder = st.empty()
+        if up is not None:
+            kind, pages = doc_info_preview(name, data)
+            over = pages is not None and pages > SETTINGS.max_pages
+            pages_txt = f"{pages} page{'s' if pages != 1 else ''}" if pages else "page count unknown"
+            render(f'<div class="dp-file"><div class="ic">{icon("file")}</div>'
+                   f'<div class="meta"><b>{esc(sanitize_filename(name))}</b>'
+                   f'<span>{kind} · {len(data) / 1024 / 1024:,.1f} MB · {pages_txt}</span></div>'
+                   + (chip(f"First {SETTINGS.max_pages} pages will be converted", "warning", "alert") if over else "")
+                   + "</div>")
+            start = st.button("Convert to Excel", type="primary", icon=":material/table_view:") or start
+        if start:
+            with proc_holder.container(key="process_panel"):
+                result = run_processing(name, data, OCR_CHOICES[ocr_label][0], REPEATS[rep], st.empty())
+            if result is not None:
+                ss.results[result.file_hash] = result
+                ss.active = result.file_hash
+                ss.applied = None
+                record_run(result)
+                st.rerun()
 
-    render(section("How it works", "sparkles"))
-    render(workflow())
+    res = active_result()
+    if res is None:
+        render(note("Files are processed on this computer. Nothing is uploaded to external services, and the "
+                    "processing history stores metrics only — never document contents.", "", "lock"))
+        return
+    render_results(res)
+
+
+def render_results(res: ProcessingResult) -> None:
+    m = res.metrics()
+    stem = Path(res.file_name).stem
+    with st.container(key="ready_panel"):
+        c1, c2 = st.columns([3, 1.2], vertical_alignment="center")
+        with c1:
+            render(f'<h2 class="dp-display">Your Excel file is ready</h2>'
+                   f'<p class="dp-sub">{esc(res.file_name)} · read in {res.elapsed:.1f} s</p>')
+        with c2:
+            st.download_button("Download .xlsx", res.excel_bytes, file_name=f"{stem}_docupilot.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               type="primary", width="stretch", icon=":material/download:", key="dl_ready")
+        render('<div class="dp-stats">' + "".join([
+            stat("Pages", m["pages"]), stat("Read by OCR", m["ocr_pages"]), stat("Tables", m["tables"]),
+            stat("Rows", f"{m['rows']:,}"), stat("Errors found", m["critical"], "bad" if m["critical"] else "good"),
+            stat("Warnings", m["warnings"], "warn" if m["warnings"] else "good"),
+        ]) + "</div>")
+        notes = []
+        if res.pages_total:
+            notes.append(f"The file has {res.pages_total} pages; the first {m['pages']} were converted.")
+        if res.removed_rows:
+            notes.append(f"{len(res.removed_rows)} repeated or blank row(s) were removed — they are listed on the "
+                         "“Removed rows” sheet.")
+        if "totals_separate" in res.options and any(mt.kind == "summary" for t in res.tables for mt in t.row_meta):
+            notes.append("Total rows were moved to their own “Totals” sheet.")
+        notes += [w for w in res.warnings if "only the first" not in w]
+        if notes:
+            render('<ul class="dp-notes">' + "".join(f"<li>{esc(n)}</li>" for n in notes) + "</ul>")
+        render(page_strip(res.page_reports))
+
+    with st.container(key="preview_panel"):
+        render('<h3 class="dp-display">Preview</h3>')
+        if not res.tables:
+            render('<p class="dp-sub">No table was found in this file.</p>')
+        for t in res.tables:
+            render(preview_table(t, res.issues))
+
+    with st.container(key="checks_panel"):
+        render('<h3 class="dp-display">Checks and problems</h3>')
+        summary = check_summary(res.issues)
+        if summary:
+            render(check_grid(summary))
+            looked, ok = sum(c["checked"] for c in summary), sum(c["passed"] for c in summary)
+            render(f'<p class="dp-hint">{ok} of {looked} automatic checks passed. Cells that failed are coloured in '
+                   'the preview and in the Excel file.</p>')
+        problems = sorted((i for i in res.issues if i.severity in ("critical", "warning")),
+                          key=lambda i: (i.severity != "critical", i.table_id or "", i.row_index or 0))
+        if not problems:
+            render('<p class="dp-ok">✓ No problems found. Every check passed.</p>')
+        else:
+            render('<ul class="dp-lines">' + "".join(issue_line(i) for i in problems[:8]) + "</ul>")
+            if len(problems) > 8:
+                with st.expander(f"Show all {len(problems)}"):
+                    render('<ul class="dp-lines">' + "".join(issue_line(i) for i in problems[8:]) + "</ul>")
+        if st.button("Open the Validation Center", type="tertiary", icon=":material/arrow_forward:"):
+            goto("Validation Center")
+
+    cleanup_checklist(res)
+
+
+def _fix_key(res: ProcessingResult, oid: str) -> str:
+    return f"fix_{res.file_hash[:12]}_{oid}"
+
+
+def _tick_suggested(res: ProcessingResult, ids: list[str]) -> None:
+    for oid in ids:
+        ss[_fix_key(res, oid)] = True
+
+
+def cleanup_checklist(res: ProcessingResult) -> None:
+    with st.container(key="checklist_panel"):
+        render('<h3 class="dp-display">Common problems when moving a PDF into Excel</h3>'
+               '<p class="dp-sub">Tick what applies to your file and press <b>Apply</b>: the Excel file is rebuilt at once '
+               '(the document is not read again). The count shows how many places in <em>your</em> document have each '
+               'problem.</p>')
+        for o in cleanup.OPTIONS:
+            ss.setdefault(_fix_key(res, o.id), o.id in res.options)
+        picked = {o.id for o in cleanup.OPTIONS if ss[_fix_key(res, o.id)]}
+        suggested = [o.id for o in cleanup.OPTIONS if res.checklist.get(o.id, {}).get("suggested") and o.id not in picked]
+        if suggested:
+            st.button(f"Tick the {len(suggested)} suggested fix{'es' if len(suggested) != 1 else ''} for this file",
+                      on_click=_tick_suggested, args=(res, suggested), icon=":material/auto_fix_high:", key="tick_suggested")
+        for section_name in cleanup.SECTIONS:
+            render(f'<div class="dp-legend-title">{esc(section_name)}</div>')
+            for o in (x for x in cleanup.OPTIONS if x.section == section_name):
+                found = res.checklist.get(o.id, {"count": 0, "suggested": False, "examples": []})
+                with st.container(key=f"fixrow_{o.id}"):
+                    st.checkbox(o.label, key=_fix_key(res, o.id))
+                    badges = (chip("Suggested", "lamp") if found["suggested"] else "") + (
+                        chip(f"{found['count']:,} found", "ghost") if found["count"] else chip("✓ none found", "passed"))
+                    ex = (f'<span class="ex">e.g. {"  ·  ".join(esc(e) for e in found["examples"])}</span>'
+                          if found["examples"] else "")
+                    render(f'<div class="dp-fix">{badges}<span class="help">{esc(o.help)}</span>{ex}</div>')
+        dirty = picked != set(res.options)
+        a1, a2 = st.columns([1, 2.4], vertical_alignment="center")
+        if a1.button("Apply to the Excel file", type="primary", disabled=not dirty, width="stretch", key="apply_fixes"):
+            new = rebuild(res, picked)
+            ss.results[res.file_hash] = new
+            ss.applied = new.rebuild_seconds
+            st.rerun()
+        if dirty:
+            a2.markdown('<span class="dp-hint">You changed the ticks — press Apply to update the file.</span>',
+                        unsafe_allow_html=True)
+        elif ss.get("applied") is not None:
+            a2.markdown(f'<span class="dp-ok">✓ Excel file updated in {ss.applied:.2f} s</span>', unsafe_allow_html=True)
 
 
 def page_overview(res: ProcessingResult) -> None:

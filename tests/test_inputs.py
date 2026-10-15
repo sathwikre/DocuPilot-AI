@@ -65,9 +65,12 @@ def test_page_without_tables_is_reported(report_result):
     assert page4.status == "no_tables" and page4.tables_found == 0
 
 
-def test_more_than_50_pages_is_rejected():
-    with pytest.raises(DocumentRejected, match="limit"):
-        process_document(build_long_statement(SETTINGS.max_pages + 1), "long.pdf")
+def test_more_than_50_pages_converts_the_first_50_and_says_so():
+    r = process_document(build_long_statement(SETTINGS.max_pages + 2), "long.pdf")
+    assert r.doc_info.page_count == SETTINGS.max_pages
+    assert r.pages_total == SETTINGS.max_pages + 2
+    assert any("only the first" in w for w in r.warnings)
+    assert max(m.page for t in r.tables for m in t.row_meta) == SETTINGS.max_pages
 
 
 def test_document_at_the_50_page_limit():

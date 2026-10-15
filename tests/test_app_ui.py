@@ -21,11 +21,10 @@ def isolated_history(tmp_path, monkeypatch):
 
 
 def _start(at: AppTest, sample_label: str) -> AppTest:
+    """A sample button converts straight away (like dropping a file and pressing Convert)."""
     at.run()
     assert not at.exception
     next(b for b in at.button if b.label.startswith(sample_label)).click().run()
-    assert not at.exception
-    next(b for b in at.button if b.label == "Start Extraction").click().run()
     assert not at.exception
     return at
 
@@ -41,7 +40,8 @@ def test_empty_pages_show_empty_states(isolated_history):
 
 def test_upload_to_results_workflow(isolated_history):
     at = _start(AppTest.from_file(APP, default_timeout=300), "Invoice")
-    assert at.session_state["nav"] == "Overview"
+    assert at.session_state["nav"] == "Home"
+    assert any("Your Excel file is ready" in m.value for m in at.markdown)
     res = at.session_state["results"][at.session_state["active"]]
     assert res.metrics()["critical"] == 2
     for page in PAGES:
@@ -62,3 +62,28 @@ def test_export_page_offers_real_workbook(isolated_history):
     assert not at.exception
     res = at.session_state["results"][at.session_state["active"]]
     assert res.excel_bytes[:2] == b"PK"  # xlsx is a zip container
+
+
+def test_checklist_apply_rebuilds_the_workbook(isolated_history):
+    at = _start(AppTest.from_file(APP, default_timeout=300), "Invoice")
+    h = at.session_state["active"]
+    before = at.session_state["results"][h]
+    apply = next(b for b in at.button if b.label == "Apply to the Excel file")
+    assert apply.disabled, "nothing to apply until a box changes"
+    next(c for c in at.checkbox if c.label.startswith("Total and sub-total rows")).check().run()
+    next(b for b in at.button if b.label == "Apply to the Excel file").click().run()
+    assert not at.exception
+    after = at.session_state["results"][h]
+    assert after is not before and "totals_separate" in after.options
+    assert any("Excel file updated in" in m.value for m in at.markdown)
+
+
+def test_keep_repeats_and_ocr_choices_reach_the_engine(isolated_history):
+    at = AppTest.from_file(APP, default_timeout=300)
+    at.run()
+    at.segmented_control(key="opt_repeats").set_value("No, keep them").run()
+    at.segmented_control(key="opt_ocr").set_value("Never").run()
+    next(b for b in at.button if b.label.startswith("Invoice")).click().run()
+    assert not at.exception
+    res = at.session_state["results"][at.session_state["active"]]
+    assert "duplicates" not in res.options and res.ocr_mode == "off"

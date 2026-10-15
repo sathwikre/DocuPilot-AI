@@ -36,7 +36,9 @@ Everything runs on your machine. There are no API keys and no paid services, and
 
 | Area | What it does |
 |---|---|
-| **Inputs** | Digital PDFs, scanned (image-only) PDFs, mixed PDFs, PNG/JPG/TIFF/BMP/WEBP. Up to **50 pages**, 60 MB. Malformed, empty and password-protected files are rejected with a clear message. |
+| **Inputs** | Digital PDFs, scanned (image-only) PDFs, mixed PDFs, PNG/JPG/TIFF/BMP/WEBP. Up to **50 pages**, 60 MB. A longer file is not refused: its first 50 pages are converted and the result says so. Malformed, empty and password-protected files are rejected with a clear message. |
+| **Upload options** | *Remove repeated rows?* (yes: exact repeats are left out and listed on a **Removed rows** sheet; no: every row is kept and repeats are flagged). *Scanned pages (OCR)*: **Automatic** (only pages that are pictures), **Always OCR** (every page, even with a text layer) or **Never** (text layer only). |
+| **Clean-up checklist** | 16 common PDF-to-Excel problems in five groups (numbers, dates, text, rows and totals, workbook): numbers saved as text, lost leading zeros, OCR letter/digit mix-ups, Dr/Cr balances, European `1.234,56` numbers, blank number cells, dates as text, US month/day dates, hidden spaces, hyphenated line breaks, ALL-CAPS text, group names only on the first row, duplicate rows, total rows mixed with data, blank rows/columns, and cell highlighting. Each shows how many places in **your** document have it, with examples, and is marked *Suggested* when the document clearly has it. Tick, press **Apply**, and the workbook is rebuilt in well under a second: only clean-up, typing, validation and Excel are re-run on the stored tables; the document is not read again. Every edit goes to the audit trail. |
 | **Page classification** | Every page is classified as digital, scanned, mixed or empty (text density, image coverage, garbled glyphs, rotation) and routed to the right extractor. |
 | **Digital extraction** | Ruled tables via pdfplumber; borderless tables via a geometric word-clustering reconstructor (column gaps from an occupancy profile, multi-line headers, wrapped cells). A ruled table whose rows come out malformed is re-extracted with the geometric method. |
 | **OCR** | PaddleOCR PP-OCRv5 (English) via RapidOCR/ONNX Runtime on CPU. Pages are deskewed (projection-profile search), sideways content is detected and rotated, ruled grids are detected with OpenCV, and words are rebuilt into tables with the same geometric reconstructor. |
@@ -45,8 +47,8 @@ Everything runs on your machine. There are no API keys and no paid services, and
 | **Header normalisation** | Superficial variants are normalised ("Txn Date" → "Transaction Date", OCR typos such as "Descripton") while distinct concepts stay distinct (Debit ≠ Credit, Posting date ≠ Value date). Original headers are kept in the audit. |
 | **Typing** | Negatives (`-1.00`, `(1.00)`, `1.00-`), currencies, thousands separators (including Indian and European), percentages and dates (with day/month order inferred per column). Identifiers stay text, so leading zeros survive. Audited OCR repairs, such as `1O0.00 → 100.00` or `10.695.60 → 10,695.60`, apply only in numeric columns of OCR rows. |
 | **Validation** | Deterministic `Decimal` arithmetic. Every check returns **Passed / Failed / Unable to Verify**. Results are split into confirmed errors and suspected anomalies. Values are never changed to make totals match. |
-| **Excel** | *Extracted Data* (typed values, Excel tables with filters, frozen headers, number formats, highlighted cells with explanatory comments), *Validation Report*, *Extraction Audit*, *Document Summary*, plus one sheet per table when there are several. |
-| **UI** | Streamlit app with a custom light design system: live stage tracker with real page counters, results dashboard, table explorer, validation center and export center. |
+| **Excel** | *Extracted Data* (typed values, Excel tables with filters, frozen headers, number formats, highlighted cells with explanatory comments), *Validation Report*, *Extraction Audit*, *Document Summary* (including a checks table with items looked at / correct, and the clean-up options applied), one sheet per table when there are several, plus *Totals* and *Removed rows* sheets when those options apply. |
+| **UI** | Streamlit app with a warm "reading-room" design (paper surfaces, dark wood sidebar, serif headings). Home is a single flow: upload with options → live stage tracker → *Your Excel file is ready* with download, key numbers and a per-page strip showing how each page was read → table preview with flagged cells → checks (passed/checked per check) and problems → clean-up checklist. Overview, Table Explorer, Validation Center, Export Center and History go deeper. |
 
 ## Quick start (Windows)
 
@@ -67,7 +69,7 @@ Then open http://localhost:8501.
 
 ```powershell
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.venv\Scripts\python.exe -m pytest                       # 93 tests, about 1 minute
+.venv\Scripts\python.exe -m pytest                       # 113 tests, about 1.5 minutes
 .venv\Scripts\python.exe scripts\evaluate.py            # accuracy report -> reports\evaluation_report.md
 ```
 
@@ -84,14 +86,15 @@ On minimal Linux images, OpenCV may need `libgl1` and `libglib2.0-0` (`apt insta
 
 ## Using the app
 
-1. **Home**: drop a file, or click one of the three synthetic sample documents. The card shows the type, size and page count before you start. Click **Start Extraction**.
+1. **Home**: drop a file, choose whether to remove repeated rows and how to treat scanned pages, and click **Convert to Excel**. Or click one of the three synthetic samples, which converts straight away.
 2. **Processing**: a live tracker shows the seven real stages (inspection, classification, text/OCR, table detection, multi-page reconstruction, validation, Excel), the page being processed, OCR page count and a ticking elapsed timer. The progress bar is computed from completed stages and processed pages, not a fake percentage.
-3. **Overview**: real KPIs (pages, tables, rows, columns, critical errors, warnings, time, OCR usage), findings by severity, rows per source page, a page-by-page processing table, tables, and values found outside tables.
-4. **Table Explorer**: switch tables; search, sort and filter; choose columns for wide tables; filter by source page or flagged rows. Cells with findings are highlighted. Below the table: a row inspector (raw vs typed values, operations, findings), merge decisions, repeated headers removed, duplicates and missing values, and the header mapping.
-5. **Validation Center**: Critical / Warning / Informational / Passed counts, filters by table, check and certainty, and one card per finding with location, extracted, expected and difference values, an explanation and a suggested action.
-6. **Export Center**: download the `.xlsx` workbook, CSV files (zip) or the validation report (JSON), and preview the report and audit.
+3. **Results (on Home)**: download the workbook, see pages / OCR pages / tables / rows / errors / warnings and a coloured square per page (text read directly, OCR, blank, failed; hover for OCR confidence). Below: a preview of each table (first 25 rows, flagged cells coloured with the finding as a tooltip), the checks with passed/checked counts and the problems found, and the **clean-up checklist**. Use **Tick the suggested fixes**, adjust, then **Apply to the Excel file**.
+4. **Overview**: real KPIs (pages, tables, rows, columns, critical errors, warnings, time, OCR usage), findings by severity, rows per source page, a page-by-page processing table, tables, and values found outside tables.
+5. **Table Explorer**: switch tables; search, sort and filter; choose columns for wide tables; filter by source page or flagged rows. Cells with findings are highlighted. Below the table: a row inspector (raw vs typed values, operations, findings), merge decisions, repeated headers removed, duplicates and missing values, and the header mapping.
+6. **Validation Center**: Critical / Warning / Informational / Passed counts, filters by table, check and certainty, and one card per finding with location, extracted, expected and difference values, an explanation and a suggested action.
+7. **Export Center**: download the `.xlsx` workbook, CSV files (zip) or the validation report (JSON), and preview the report and audit.
 
-Results are kept per browser session and keyed by file hash, so navigating or re-rendering never re-processes a document. Use **Re-run extraction** to force a new run.
+Results are kept per browser session and keyed by file hash, so navigating or re-rendering never re-processes a document. Converting the same file again (for example with other upload options) replaces the stored result.
 
 | Overview | Validation |
 |---|---|
@@ -113,7 +116,8 @@ core/
   header_normalizer.py      synonym/abbreviation rules, semantic roles, header similarity
   data_normalizer.py        summary-row detection, column typing, audited OCR repairs
   field_extractor.py        totals and balances outside tables, document type
-  validator.py              rule-based checks (Decimal arithmetic)
+  cleanup.py                clean-up checklist: problem detection (counts, examples, suggestions) and fixes
+  validator.py              rule-based checks (Decimal arithmetic) and per-check passed/checked summary
   excel_exporter.py         workbook generation (openpyxl)
   value_parser.py           numbers, negatives, currencies, percentages, dates
   models.py                 dataclasses shared across stages
@@ -160,7 +164,7 @@ Checks run only when the needed columns or fields exist. If information is missi
 |---|---|
 | **Invoices** | quantity × unit price − discount = net; net × tax rate = tax; line total = net + tax (convention tested); Σ net = subtotal; Σ tax = tax total; subtotal + tax + shipping − discount = grand total; Σ line totals = subtotal + tax |
 | **Statements** | running balance per row (credit-adds, debit-adds or signed-amount convention, whichever the data supports); opening + movement = closing; stated closing = last balance; stated total debits and credits = column sums. Two consecutive failures with opposite differences are explained as one misread balance. |
-| **Generic** | row total = sum of the row's numeric cells (with a rounding allowance); "Total" summary rows = column sums; data-type consistency; missing values in well-filled columns (downgraded to informational when the row total proves the blank is genuine); partial column shifts; duplicate-looking rows (never deleted; reported as informational when a balance chain proves both are real); line-number gaps; repeated headers; row widths; uncertain merges; failed pages; low OCR confidence |
+| **Generic** | row total = sum of the row's numeric cells (with a rounding allowance); "Total" summary rows = column sums; data-type consistency; missing values in well-filled columns (downgraded to informational when the row total proves the blank is genuine); partial column shifts; duplicate-looking rows (never deleted; reported as informational when a balance chain proves both are real); line-number gaps; date order (a date that breaks an otherwise ascending or descending column, often a misread digit); repeated headers; row widths; uncertain merges; failed pages; low OCR confidence |
 
 Severity: **critical** is a confirmed numerical failure, **warning** a suspected issue, **info** informational or unable to verify, **passed** a satisfied check. Cells that cannot be read (for example, OCR-garbled amounts) make dependent sums and chains *Unable to Verify* instead of producing false failures.
 

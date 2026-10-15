@@ -5,9 +5,12 @@ Sheets:
                            Cells with validation findings are highlighted and carry a comment.
   2. Validation Report   - one row per check result.
   3. Extraction Audit    - one row per extracted row: page, table, method, operations, warnings.
-  4. Document Summary    - pages, merge decisions, header mappings, extracted fields.
+  4. Document Summary    - pages, merge decisions, header mappings, extracted fields, checks
+                           (looked at / correct) and the clean-up options applied.
   5+ T<n> sheets         - one sheet per table when the document has more than one table, each with
                            its own frozen header and auto-filter.
+     Totals              - total/sub-total rows, when the 'totals_separate' clean-up option is ticked.
+     Removed rows        - rows taken out by clean-up options (duplicates, blank rows), with the reason.
 Only metadata that exists is written; nothing is invented.
 """
 from __future__ import annotations
@@ -24,7 +27,9 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
+from core.cleanup import OPTIONS
 from core.models import LogicalTable, ProcessingResult, ValidationIssue
+from core.validator import check_summary
 
 HEADER_FILL = PatternFill("solid", fgColor="1E1B4B")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -90,8 +95,10 @@ def _unique_table_name(base: str, used: set[str]) -> str:
     return cand
 
 
-def _write_table(ws, t: LogicalTable, start_row: int, issues_by_cell, used_names: set[str], with_title: bool) -> int:
-    """Write one table at start_row. Returns the next free row."""
+def _write_table(ws, t: LogicalTable, start_row: int, issues_by_cell, used_names: set[str], with_title: bool,
+                 rows: Optional[Sequence[int]] = None) -> int:
+    """Write one table at start_row (only the row indices in `rows`, if given). Returns the next free row."""
+    rows = list(range(len(t.values))) if rows is None else list(rows)
     r0 = start_row
     if with_title:
         ws.cell(r0, 1, f"{t.table_id} — {t.title or 'Untitled table'}").font = TITLE_FONT
@@ -105,8 +112,9 @@ def _write_table(ws, t: LogicalTable, start_row: int, issues_by_cell, used_names
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     formats = [_num_format(ty, [row[i] for row in t.values]) for i, ty in enumerate(t.col_types)]
     widths = [len(h) for h in headers]
-    for ri, (vals, meta) in enumerate(zip(t.values, t.row_meta)):
-        excel_row = r0 + 1 + ri
+    for pos, ri in enumerate(rows):
+        vals, meta = t.values[ri], t.row_meta[ri]
+        excel_row = r0 + 1 + pos
         ws.cell(excel_row, 1, meta.row_id).font = Font(color="64748B", size=9)
         for ci, v in enumerate(vals):
             cell = ws.cell(excel_row, ci + 2, _excel_safe_text(_cell_value(v)))
@@ -131,8 +139,8 @@ def _write_table(ws, t: LogicalTable, start_row: int, issues_by_cell, used_names
             c = ws.cell(excel_row, 1)
             c.fill = ISSUE_FILL["critical" if any(i.severity == "critical" for i in row_issues) else "warning"]
             c.comment = Comment("\n".join(i.explanation for i in row_issues)[:1500], "DocuPilot AI")
-    last_row = r0 + len(t.values)
-    if t.values:
+    last_row = r0 + len(rows)
+    if rows:
         ref = f"A{r0}:{get_column_letter(len(headers))}{last_row}"
         tab = Table(displayName=_unique_table_name(f"{t.table_id}_data", used_names), ref=ref)
         tab.tableStyleInfo = TableStyleInfo(name="TableStyleLight9", showRowStripes=True)
@@ -161,10 +169,16 @@ def _header_row(ws, headers: Sequence[str]) -> None:
     ws.freeze_panes = "A2"
 
 
+def _data_rows(t: LogicalTable, separate_totals: bool) -> list[int]:
+    return [i for i, m in enumerate(t.row_meta) if not (separate_totals and m.kind == "summary")]
+
+
 def build_workbook(result: ProcessingResult) -> bytes:
     """Create the .xlsx workbook and return its bytes."""
     wb = Workbook()
-    issues_by_cell = _issue_map(result.issues)
+    opts = result.options or frozenset({"flag_cells"})  # results built without the checklist keep the old behaviour
+    issues_by_cell = _issue_map(result.issues) if "flag_cells" in opts else {}
+    separate = "totals_separate" in opts
     used_names: set[str] = set()
 
     # 1. Extracted Data
@@ -174,12 +188,13 @@ def build_workbook(result: ProcessingResult) -> bytes:
         ws["A1"] = "No tables were detected in this document."
         ws["A1"].font = TITLE_FONT
     elif len(result.tables) == 1:
-        _write_table(ws, result.tables[0], 1, issues_by_cell, used_names, with_title=False)
+        t = result.tables[0]
+        _write_table(ws, t, 1, issues_by_cell, used_names, with_title=False, rows=_data_rows(t, separate))
         ws.freeze_panes = "B2"
     else:
         row = 1
         for t in result.tables:
-            row = _write_table(ws, t, row, issues_by_cell, used_names, with_title=True)
+            row = _write_table(ws, t, row, issues_by_cell, used_names, with_title=True, rows=_data_rows(t, separate))
         ws.freeze_panes = "B4"
 
     # 2. Validation Report
@@ -282,6 +297,28 @@ def build_workbook(result: ProcessingResult) -> bytes:
         row += 1
         for ci, v in enumerate([f.key, f.label, _cell_value(f.value), f.page, f.source], start=1):
             _guard(ds.cell(row, ci, _excel_safe_text(v)))
+
+    # Checks (looked at / correct) and the clean-up options that shaped this workbook.
+    row += 2
+    ds.cell(row, 1, "Checks").font = TITLE_FONT
+    row += 1
+    for ci, h in enumerate(["Check", "Looked at", "Correct", "Result"], start=1):
+        c = ds.cell(row, ci, h)
+        c.fill, c.font = HEADER_FILL, HEADER_FONT
+    for chk in check_summary(result.issues):
+        row += 1
+        ok = chk["passed"] == chk["checked"]
+        for ci, v in enumerate([chk["check"], chk["checked"], chk["passed"], "All correct" if ok else "Needs review"],
+                               start=1):
+            ds.cell(row, ci, v)
+        ds.cell(row, 4).fill = ISSUE_FILL["passed" if ok else "critical"]
+    if result.options:
+        row += 2
+        ds.cell(row, 1, "Clean-up applied").font = TITLE_FONT
+        for o in OPTIONS:
+            if o.id in result.options:
+                row += 1
+                ds.cell(row, 1, o.label)
     _autosize(ds, max_width=100)
 
     # 5+. One sheet per table when there are several.
@@ -289,8 +326,28 @@ def build_workbook(result: ProcessingResult) -> bytes:
         for t in result.tables:
             name = _SAFE_SHEET.sub("_", f"{t.table_id} {t.title or ''}".strip())[:31]
             tw = wb.create_sheet(name)
-            _write_table(tw, t, 1, issues_by_cell, used_names, with_title=False)
+            _write_table(tw, t, 1, issues_by_cell, used_names, with_title=False, rows=_data_rows(t, separate))
             tw.freeze_panes = "B2"
+
+    # Totals moved off the data sheets by the 'totals_separate' option.
+    if separate and any(m.kind == "summary" for t in result.tables for m in t.row_meta):
+        tw = wb.create_sheet("Totals")
+        row = 1
+        for t in result.tables:
+            summary = [i for i, m in enumerate(t.row_meta) if m.kind == "summary"]
+            if summary:
+                row = _write_table(tw, t, row, issues_by_cell, used_names, with_title=True, rows=summary)
+
+    # Rows taken out by clean-up options: listed, never silently dropped.
+    if result.removed_rows:
+        rw = wb.create_sheet("Removed rows")
+        _header_row(rw, ["Table", "Row ID", "Source Page", "Reason", "Row content"])
+        for r, rem in enumerate(result.removed_rows, start=2):
+            for ci, v in enumerate([rem.table_id, rem.row_id, rem.page, rem.reason,
+                                    " | ".join(c for c in rem.cells if c.strip())], start=1):
+                _guard(rw.cell(r, ci, v))
+        rw.auto_filter.ref = f"A1:E{len(result.removed_rows) + 1}"
+        _autosize(rw, max_width=90)
 
     buf = io.BytesIO()
     wb.save(buf)
