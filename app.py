@@ -28,7 +28,7 @@ from ui.components import (
     kpi, kpi_grid, note, page_title, render, section, stage_tracker, state_card, status_row, workflow,
 )
 from utils.file_validation import FileValidationError, sanitize_filename, sha256_bytes
-from utils.history import clear_history, lifetime_totals, load_history, record_run
+from utils.history import clear_history, load_history, record_run
 
 ROOT = Path(__file__).resolve().parent
 SAMPLES = {
@@ -201,34 +201,7 @@ def page_home() -> None:
            '<p>Turn complex documents into accurate spreadsheets with intelligent extraction and automated validation.</p></div>')
     render(workflow())
 
-    left, right = st.columns([1.55, 1], gap="large")
-    with right:
-        hist = load_history()
-        tot = lifetime_totals(hist)
-        render(section("Your workspace", "chart"))
-        foot = "from local history" if hist else "no documents processed yet"
-        render(kpi_grid([
-            kpi("Documents processed", tot["documents"], "file", foot),
-            kpi("Tables extracted", tot["tables"], "table", f'{tot["rows"]:,} rows', "cyan"),
-        ], cols=2))
-        st.write("")
-        render(kpi_grid([
-            kpi("Pages read", tot["pages"], "pages", foot),
-            kpi("Validation issues found", tot["issues"], "alert", f'{tot["critical"]} critical', "warning"),
-        ], cols=2))
-        render(section("Recent processing", "history"))
-        if not hist:
-            render(empty_state("Nothing here yet", "Processed documents will appear here with their real metrics.", "history"))
-        else:
-            rows = []
-            for e in reversed(hist[-6:]):
-                crit = f'<span class="dp-chip critical">{e.get("critical", 0)}</span>' if e.get("critical") else chip("0", "passed")
-                rows.append([f'<b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{esc(e["file_name"])}">{esc(e["file_name"])}</b><span style="color:var(--muted);font-size:.74rem">'
-                             f'{esc(e["timestamp"][:16])} · {esc(DOC_TYPES.get(e.get("doc_type"), e.get("doc_type")))} · '
-                             f'{e.get("tables", 0)} table(s)</span>', e.get("rows", 0), crit])
-            render('<div class="dp-card" style="padding:6px 8px">' +
-                   html_table(["Document", "Rows", "Critical"], rows, num_cols=(1,), widths=("64%", "16%", "20%")) + "</div>")
-
+    left = st.container()
     with left:
         with st.container(key="upload_panel"):
             render(section("Upload a document", "upload"))
