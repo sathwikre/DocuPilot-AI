@@ -187,9 +187,6 @@ def no_result_state(what: str) -> None:
 # =============================================================================== pages
 REPEATS = {"Remove them": (True, "Exact repeats go to a “Removed rows” sheet"),
            "Keep them": (False, "Every row stays; repeats are flagged")}
-OCR_CHOICES = {"Automatic": ("auto", "OCR only pages that are pictures"),
-               "Always": ("force", "OCR every page, even with a text layer"),
-               "Never": ("off", "Use the PDF text layer only")}
 
 
 def page_home() -> None:
@@ -203,15 +200,17 @@ def page_home() -> None:
                               type=[e.lstrip(".") for e in SETTINGS.allowed_extensions], key="uploader",
                               label_visibility="collapsed")
         with st.container(key="opts_row"):
-            o1, o2 = st.columns(2, gap="large")
+            o1, o2 = st.columns(2, gap="large", vertical_alignment="bottom")
         with o1:
             render(f'<div class="dp-optlabel">{icon("rows")}<span>Repeated rows</span></div>')
             rep = st.radio("Repeated rows", list(REPEATS), captions=[c for _, c in REPEATS.values()],
                            key="opt_repeats", horizontal=True, label_visibility="collapsed")
         with o2:
-            render(f'<div class="dp-optlabel">{icon("scan")}<span>Scanned pages</span></div>')
-            ocr_label = st.radio("Scanned pages", list(OCR_CHOICES), captions=[c for _, c in OCR_CHOICES.values()],
-                                 key="opt_ocr", horizontal=True, label_visibility="collapsed")
+            # OCR is decided per page by the engine: pictures, garbled text layers and rotated pages are read with OCR,
+            # and mixed pages are read both ways with the better tables kept. No user choice needed.
+            render(f'<div class="dp-auto">{icon("scan")}<div><b>Scanned pages are handled automatically</b>'
+                   '<span>Pages that are pictures, have an unreadable text layer or are rotated are read with OCR; '
+                   'pages with real text are read directly.</span></div></div>')
 
         name, data, start = None, None, False
         if up is not None:
@@ -236,7 +235,7 @@ def page_home() -> None:
             start = st.button("Convert to Excel", type="primary", icon=":material/table_view:") or start
         if start:
             with proc_holder.container(key="process_panel"):
-                result = run_processing(name, data, OCR_CHOICES[ocr_label][0], REPEATS[rep][0], st.empty())
+                result = run_processing(name, data, "auto", REPEATS[rep][0], st.empty())
             if result is not None:
                 ss.results[result.file_hash] = result
                 ss.active = result.file_hash

@@ -93,12 +93,11 @@ def test_checklist_apply_rebuilds_the_workbook(isolated_history):
     assert any("Excel file updated in" in m.value for m in at.markdown)
 
 
-def test_keep_repeats_and_ocr_choices_reach_the_engine(isolated_history):
+def test_keep_repeats_choice_reaches_the_engine_and_ocr_is_automatic(isolated_history):
     at = AppTest.from_file(APP, default_timeout=300)
     at.run()
     at.radio(key="opt_repeats").set_value("Keep them").run()
-    at.radio(key="opt_ocr").set_value("Never").run()
     next(b for b in at.button if b.label.startswith("Invoice")).click().run()
     assert not at.exception
     res = at.session_state["results"][at.session_state["active"]]
-    assert "duplicates" not in res.options and res.ocr_mode == "off"
+    assert "duplicates" not in res.options and res.ocr_mode == "auto"

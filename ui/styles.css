@@ -630,6 +630,11 @@ h1, h2, h3, h4 { color: var(--text); }
   border: 1px solid #fbd3b4; flex-shrink: 0; }
 .dp-legend-title { margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border-2); }
 .dp-legend-title::before { content: ""; width: 4px; height: 16px; border-radius: 2px; background: var(--accent); }
+.dp-auto { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px;
+  background: #edf6f4; border: 1px solid #c6e1dd; }
+.dp-auto svg { width: 26px; height: 26px; padding: 5px; flex-shrink: 0; border-radius: 8px; color: var(--passed); background: #ffffff; }
+.dp-auto b { display: block; color: #1f5f59; font-size: 0.9rem; }
+.dp-auto span { display: block; color: #3d6f6a; font-size: 0.8rem; line-height: 1.4; margin-top: 2px; }
 :is(.st-key-opt_repeats, .st-key-opt_ocr), :is(.st-key-opt_repeats, .st-key-opt_ocr) [data-testid="stRadio"] {
   width: 100% !important; max-width: 100%;
 }
