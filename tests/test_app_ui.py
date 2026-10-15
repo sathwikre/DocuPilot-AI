@@ -1,0 +1,64 @@
+"""UI workflow test: select a document, start extraction, open every page, download the workbook.
+
+Uses Streamlit's AppTest harness (headless; no browser needed).
+"""
+from pathlib import Path
+
+import pytest
+from streamlit.testing.v1 import AppTest
+
+APP = str(Path(__file__).resolve().parent.parent / "app.py")
+PAGES = ["Overview", "Table Explorer", "Validation Center", "Export Center", "History", "Home"]
+
+
+@pytest.fixture()
+def isolated_history(tmp_path, monkeypatch):
+    import config.settings as cs
+    from dataclasses import replace
+    import utils.history as h
+    monkeypatch.setattr(h, "SETTINGS", replace(cs.SETTINGS, reports_dir=tmp_path))
+    return tmp_path
+
+
+def _start(at: AppTest, sample_label: str) -> AppTest:
+    at.run()
+    assert not at.exception
+    next(b for b in at.button if b.label.startswith(sample_label)).click().run()
+    assert not at.exception
+    next(b for b in at.button if b.label == "Start Extraction").click().run()
+    assert not at.exception
+    return at
+
+
+def test_empty_pages_show_empty_states(isolated_history):
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.run()
+    for page in ["Overview", "Table Explorer", "Validation Center", "Export Center"]:
+        at.sidebar.radio[0].set_value(page).run()
+        assert not at.exception
+        assert any("No document processed yet" in m.value for m in at.markdown)
+
+
+def test_upload_to_results_workflow(isolated_history):
+    at = _start(AppTest.from_file(APP, default_timeout=300), "Invoice")
+    assert at.session_state["nav"] == "Overview"
+    res = at.session_state["results"][at.session_state["active"]]
+    assert res.metrics()["critical"] == 2
+    for page in PAGES:
+        at.sidebar.radio[0].set_value(page).run()
+        assert not at.exception, f"{page}: {at.exception}"
+    # Results must not be recomputed on rerender: the same object stays in session state.
+    at.sidebar.radio[0].set_value("Overview").run()
+    assert at.session_state["results"][at.session_state["active"]] is res
+    # History recorded real metrics only.
+    import json
+    hist = json.loads((isolated_history / "history.json").read_text())
+    assert hist[-1]["rows"] == 14 and "rows_data" not in hist[-1]
+
+
+def test_export_page_offers_real_workbook(isolated_history):
+    at = _start(AppTest.from_file(APP, default_timeout=300), "Complex report")
+    at.sidebar.radio[0].set_value("Export Center").run()
+    assert not at.exception
+    res = at.session_state["results"][at.session_state["active"]]
+    assert res.excel_bytes[:2] == b"PK"  # xlsx is a zip container

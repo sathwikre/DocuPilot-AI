@@ -1,0 +1,248 @@
+{
+  "name": "sample_a_invoice",
+  "description": "Digital invoice, 12 columns, ruled grid, wrapped descriptions, a negative return line, and a deliberately overstated Line Total on line 7.",
+  "doc_type": "invoice",
+  "pages": 1,
+  "scanned": false,
+  "tables": [
+    {
+      "title": null,
+      "pages": [
+        1
+      ],
+      "header": [
+        "#",
+        "SKU",
+        "Description",
+        "HSN",
+        "Qty",
+        "Unit",
+        "Unit Price",
+        "Disc %",
+        "Net Amount",
+        "Tax %",
+        "Tax Amount",
+        "Line Total"
+      ],
+      "rows": [
+        [
+          "1",
+          "FX-1001",
+          "Hex bolt M8 x 40, zinc plated",
+          "7318",
+          "500",
+          "pcs",
+          "0.42",
+          "",
+          "210.00",
+          "18%",
+          "37.80",
+          "247.80"
+        ],
+        [
+          "2",
+          "FX-1002",
+          "Hex nut M8, zinc plated",
+          "7318",
+          "500",
+          "pcs",
+          "0.11",
+          "",
+          "55.00",
+          "18%",
+          "9.90",
+          "64.90"
+        ],
+        [
+          "3",
+          "FX-2040",
+          "Industrial fastener kit, assorted sizes (240 pc)",
+          "7318",
+          "12",
+          "kit",
+          "38.50",
+          "5.0%",
+          "438.90",
+          "18%",
+          "79.00",
+          "517.90"
+        ],
+        [
+          "4",
+          "TL-0310",
+          "Cordless drill 18V, 2 batteries",
+          "8467",
+          "4",
+          "ea",
+          "129.99",
+          "10.0%",
+          "467.96",
+          "18%",
+          "84.23",
+          "552.19"
+        ],
+        [
+          "5",
+          "TL-0311",
+          "Drill bit set HSS 19 pc",
+          "8207",
+          "6",
+          "set",
+          "24.75",
+          "",
+          "148.50",
+          "18%",
+          "26.73",
+          "175.23"
+        ],
+        [
+          "6",
+          "SF-5500",
+          "Safety goggles, anti-fog",
+          "9004",
+          "40",
+          "pcs",
+          "6.20",
+          "",
+          "248.00",
+          "12%",
+          "29.76",
+          "277.76"
+        ],
+        [
+          "7",
+          "SF-5510",
+          "Nitrile gloves, box of 100",
+          "4015",
+          "25",
+          "box",
+          "11.90",
+          "2.5%",
+          "290.06",
+          "12%",
+          "34.81",
+          "334.87"
+        ],
+        [
+          "8",
+          "EL-7002",
+          "Cable tie 300mm, pack of 100",
+          "3926",
+          "30",
+          "pack",
+          "3.45",
+          "",
+          "103.50",
+          "18%",
+          "18.63",
+          "122.13"
+        ],
+        [
+          "9",
+          "EL-7105",
+          "Insulation tape 19mm x 20m",
+          "3919",
+          "60",
+          "roll",
+          "0.95",
+          "",
+          "57.00",
+          "18%",
+          "10.26",
+          "67.26"
+        ],
+        [
+          "10",
+          "PK-9000",
+          "Stretch film 500mm x 300m",
+          "3920",
+          "8",
+          "roll",
+          "17.60",
+          "",
+          "140.80",
+          "18%",
+          "25.34",
+          "166.14"
+        ],
+        [
+          "11",
+          "PK-9010",
+          "Corrugated box 40x30x30, double wall",
+          "4819",
+          "150",
+          "pcs",
+          "1.35",
+          "3.0%",
+          "196.43",
+          "12%",
+          "23.57",
+          "220.00"
+        ],
+        [
+          "12",
+          "TL-0420",
+          "Torque wrench 1/2in, 40-210 Nm",
+          "8204",
+          "2",
+          "ea",
+          "89.00",
+          "",
+          "178.00",
+          "18%",
+          "32.04",
+          "210.04"
+        ],
+        [
+          "13",
+          "SV-0001",
+          "On-site calibration service",
+          "9987",
+          "1",
+          "job",
+          "150.00",
+          "",
+          "150.00",
+          "18%",
+          "27.00",
+          "177.00"
+        ],
+        [
+          "14",
+          "RT-0310",
+          "Return: cordless drill (damaged)",
+          "8467",
+          "-1",
+          "ea",
+          "129.99",
+          "10.0%",
+          "-116.99",
+          "18%",
+          "-21.06",
+          "-138.05"
+        ]
+      ]
+    }
+  ],
+  "fields": {
+    "subtotal": "2567.16",
+    "tax_total": "418.01",
+    "shipping": "45.00",
+    "grand_total": "3030.17"
+  },
+  "expected_issues": [
+    {
+      "check": "line_arithmetic",
+      "table": 0,
+      "row": 7,
+      "column": "Line Total",
+      "difference": "10.00"
+    },
+    {
+      "check": "line_total_sum",
+      "table": 0,
+      "row": null,
+      "difference": "10.00"
+    }
+  ]
+}

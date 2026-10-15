@@ -1,0 +1,291 @@
+{
+  "generated": "2026-10-15 11:12:31",
+  "samples": {
+    "sample_a_invoice.pdf": {
+      "cell_accuracy": 1.0,
+      "row_completeness": 1.0,
+      "column_alignment": 1.0,
+      "duplicate_rate": 0.0,
+      "extra_rows": 0,
+      "tables_expected": 1,
+      "tables_extracted": 1,
+      "validation_recall": 1.0,
+      "validation_expected": 2,
+      "validation_detected": 2,
+      "unexpected_critical": [],
+      "doc_type": "invoice",
+      "doc_type_expected": "invoice",
+      "seconds": 0.147,
+      "ocr_pages": 0,
+      "issue_detail": [
+        {
+          "check": "line_arithmetic",
+          "table": 0,
+          "row": 7,
+          "column": "Line Total",
+          "difference": "10.00",
+          "detected": true
+        },
+        {
+          "check": "line_total_sum",
+          "table": 0,
+          "row": null,
+          "difference": "10.00",
+          "detected": true
+        }
+      ],
+      "tables": [
+        {
+          "expected_table": 0,
+          "matched": "T1",
+          "pages": [
+            1
+          ],
+          "expected_rows": 14,
+          "extracted_rows": 14,
+          "aligned_rows": 14,
+          "row_completeness": 1.0,
+          "cell_accuracy": 1.0,
+          "column_alignment": 1.0,
+          "extra_rows": 0,
+          "duplicate_rows": 0,
+          "mismatches": []
+        }
+      ],
+      "_totals": {
+        "cells": 168,
+        "cells_ok": 168,
+        "rows": 14,
+        "rows_aligned": 14,
+        "cols": 12,
+        "cols_aligned": 12,
+        "extracted_rows": 14,
+        "dup_rows": 0,
+        "extra_rows": 0
+      }
+    },
+    "sample_b_statement_scanned.pdf": {
+      "cell_accuracy": 0.9938,
+      "row_completeness": 1.0,
+      "column_alignment": 1.0,
+      "duplicate_rate": 0.0,
+      "extra_rows": 0,
+      "tables_expected": 1,
+      "tables_extracted": 1,
+      "validation_recall": null,
+      "validation_expected": 0,
+      "validation_detected": 0,
+      "unexpected_critical": [],
+      "doc_type": "bank_statement",
+      "doc_type_expected": "bank_statement",
+      "seconds": 16.821,
+      "ocr_pages": 3,
+      "issue_detail": [],
+      "tables": [
+        {
+          "expected_table": 0,
+          "matched": "T1",
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "expected_rows": 46,
+          "extracted_rows": 46,
+          "aligned_rows": 46,
+          "row_completeness": 1.0,
+          "cell_accuracy": 0.9938,
+          "column_alignment": 1.0,
+          "extra_rows": 0,
+          "duplicate_rows": 0,
+          "mismatches": [
+            {
+              "row": 10,
+              "column": "Ref No",
+              "expected": "-",
+              "got": ""
+            },
+            {
+              "row": 11,
+              "column": "Ref No",
+              "expected": "-",
+              "got": ""
+            }
+          ]
+        }
+      ],
+      "_totals": {
+        "cells": 322,
+        "cells_ok": 320,
+        "rows": 46,
+        "rows_aligned": 46,
+        "cols": 7,
+        "cols_aligned": 7,
+        "extracted_rows": 46,
+        "dup_rows": 0,
+        "extra_rows": 0
+      }
+    },
+    "sample_c_report.pdf": {
+      "cell_accuracy": 1.0,
+      "row_completeness": 1.0,
+      "column_alignment": 1.0,
+      "duplicate_rate": 0.0,
+      "extra_rows": 0,
+      "tables_expected": 3,
+      "tables_extracted": 3,
+      "validation_recall": 1.0,
+      "validation_expected": 1,
+      "validation_detected": 1,
+      "unexpected_critical": [],
+      "doc_type": "financial_report",
+      "doc_type_expected": "financial_report",
+      "seconds": 0.631,
+      "ocr_pages": 0,
+      "issue_detail": [
+        {
+          "check": "row_total",
+          "table": 0,
+          "row": 4,
+          "column": "FY Total",
+          "difference": "10.0",
+          "detected": true
+        }
+      ],
+      "tables": [
+        {
+          "expected_table": 0,
+          "matched": "T1",
+          "pages": [
+            1,
+            2
+          ],
+          "expected_rows": 20,
+          "extracted_rows": 20,
+          "aligned_rows": 20,
+          "row_completeness": 1.0,
+          "cell_accuracy": 1.0,
+          "column_alignment": 1.0,
+          "extra_rows": 0,
+          "duplicate_rows": 0,
+          "mismatches": []
+        },
+        {
+          "expected_table": 1,
+          "matched": "T2",
+          "pages": [
+            2
+          ],
+          "expected_rows": 10,
+          "extracted_rows": 10,
+          "aligned_rows": 10,
+          "row_completeness": 1.0,
+          "cell_accuracy": 1.0,
+          "column_alignment": 1.0,
+          "extra_rows": 0,
+          "duplicate_rows": 0,
+          "mismatches": []
+        },
+        {
+          "expected_table": 2,
+          "matched": "T3",
+          "pages": [
+            3
+          ],
+          "expected_rows": 9,
+          "extracted_rows": 9,
+          "aligned_rows": 9,
+          "row_completeness": 1.0,
+          "cell_accuracy": 1.0,
+          "column_alignment": 1.0,
+          "extra_rows": 0,
+          "duplicate_rows": 0,
+          "mismatches": []
+        }
+      ],
+      "_totals": {
+        "cells": 470,
+        "cells_ok": 470,
+        "rows": 39,
+        "rows_aligned": 39,
+        "cols": 34,
+        "cols_aligned": 34,
+        "extracted_rows": 39,
+        "dup_rows": 0,
+        "extra_rows": 0
+      }
+    },
+    "sample_d_invoice_photo.png": {
+      "cell_accuracy": 1.0,
+      "row_completeness": 1.0,
+      "column_alignment": 1.0,
+      "duplicate_rate": 0.0,
+      "extra_rows": 0,
+      "tables_expected": 1,
+      "tables_extracted": 1,
+      "validation_recall": 1.0,
+      "validation_expected": 2,
+      "validation_detected": 2,
+      "unexpected_critical": [],
+      "doc_type": "invoice",
+      "doc_type_expected": "invoice",
+      "seconds": 7.652,
+      "ocr_pages": 1,
+      "issue_detail": [
+        {
+          "check": "line_arithmetic",
+          "table": 0,
+          "row": 7,
+          "column": "Line Total",
+          "difference": "10.00",
+          "detected": true
+        },
+        {
+          "check": "line_total_sum",
+          "table": 0,
+          "row": null,
+          "difference": "10.00",
+          "detected": true
+        }
+      ],
+      "tables": [
+        {
+          "expected_table": 0,
+          "matched": "T1",
+          "pages": [
+            1
+          ],
+          "expected_rows": 14,
+          "extracted_rows": 14,
+          "aligned_rows": 14,
+          "row_completeness": 1.0,
+          "cell_accuracy": 1.0,
+          "column_alignment": 1.0,
+          "extra_rows": 0,
+          "duplicate_rows": 0,
+          "mismatches": []
+        }
+      ],
+      "_totals": {
+        "cells": 168,
+        "cells_ok": 168,
+        "rows": 14,
+        "rows_aligned": 14,
+        "cols": 12,
+        "cols_aligned": 12,
+        "extracted_rows": 14,
+        "dup_rows": 0,
+        "extra_rows": 0
+      }
+    }
+  },
+  "overall": {
+    "cell_accuracy": 0.9982,
+    "row_completeness": 1.0,
+    "column_alignment": 1.0,
+    "duplicate_rate": 0.0,
+    "validation_recall": 1.0,
+    "expected_cells": 1128,
+    "expected_rows": 113
+  }
+}

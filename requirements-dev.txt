@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest==9.1.1
+reportlab==5.0.1           # generates the synthetic sample PDFs
+playwright==1.64.0         # optional: browser screenshots of the UI (uses installed Edge/Chrome)

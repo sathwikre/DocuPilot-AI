@@ -1,0 +1,17 @@
+# DocuPilot AI - tested on Python 3.11 (Windows 11, CPU only). Versions are the ones verified in this repo.
+# Core
+streamlit==1.66.0
+pandas==3.0.6
+numpy==2.4.6
+openpyxl==3.1.5
+altair==6.3.0
+requests==2.34.2
+# PDF parsing / rendering
+pdfplumber==0.11.10
+pymupdf==1.28.2            # AGPL-3.0 (see README > Licenses)
+# OCR: PaddleOCR PP-OCR models on ONNX Runtime (CPU, offline at inference time)
+rapidocr==3.10.0           # preferred: English PP-OCRv5 recogniser (one-time ~8 MB model download)
+rapidocr-onnxruntime==1.4.4  # offline fallback: PP-OCRv4 models bundled in the wheel
+onnxruntime==1.31.0
+opencv-python==5.0.0.93
+pillow==12.3.0
