@@ -87,6 +87,10 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
 [data-testid="stSidebar"] [data-testid="stRadioOption"] > div > div:first-child { display: none; }
 [data-testid="stSidebar"] [role="radiogroup"] > div[data-selected="true"] [data-testid="stRadioOption"] {
   background: #ffffff; border-color: var(--border); box-shadow: var(--shadow-xs), 0 6px 16px -10px rgba(79, 70, 229, 0.35);
+  position: relative;
+}
+[data-testid="stSidebar"] [role="radiogroup"] > div[data-selected="true"] [data-testid="stRadioOption"]::before {
+  content: ""; position: absolute; left: -1px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--grad);
 }
 [data-testid="stSidebar"] [data-testid="stRadioOption"] p { font-size: 0.93rem; font-weight: 550; color: var(--text-2); }
 [data-testid="stSidebar"] [data-testid="stRadioOption"] p [data-testid="stIconMaterial"] { color: #a0a8bc; margin-right: 8px; font-size: 1.15rem; vertical-align: -3px; }
@@ -120,13 +124,19 @@ h1, h2, h3, h4 { font-family: var(--font); letter-spacing: -0.02em; color: var(-
 .dp-eyebrow i {
   font-style: normal; background: var(--grad); color: #fff; border-radius: 999px; padding: 2px 9px; font-size: 0.68rem; letter-spacing: .04em;
 }
-.dp-hero { padding: 18px 0 8px; animation: dp-rise .5s ease both; }
+.dp-hero { padding: 10px 0 8px; animation: dp-rise .5s ease both; }
 .dp-hero h1 {
-  font-size: clamp(2.3rem, 4.4vw, 3.7rem); line-height: 1.03; font-weight: 800; margin: 20px 0 16px;
+  font-size: clamp(2.2rem, 3.3vw, 3.15rem); line-height: 1.03; font-weight: 800; margin: 20px 0 16px;
   color: var(--text); letter-spacing: -0.04em;
 }
 .dp-hero h1 .grad { background: var(--grad-text); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .dp-hero p { font-size: 1.14rem; color: var(--text-2); max-width: 700px; line-height: 1.6; margin: 0; }
+.dp-checks { list-style: none; padding: 0; margin: 26px 0 0; display: flex; flex-direction: column; gap: 12px; }
+.dp-checks li { display: flex; align-items: center; gap: 12px; margin: 0; color: var(--text-2); font-size: 0.98rem; font-weight: 550; }
+.dp-checks svg {
+  width: 24px; height: 24px; padding: 5px; flex: 0 0 24px; border-radius: 99px; color: var(--passed);
+  background: #ecfdf5; border: 1px solid #a7f3d0; stroke-width: 2.6;
+}
 .dp-page-title { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 6px 0 20px; flex-wrap: wrap; }
 .dp-page-title h2 { font-size: 1.8rem; font-weight: 780; margin: 0; color: var(--text); letter-spacing: -0.03em; }
 .dp-page-title p { margin: 4px 0 0; color: var(--muted); font-size: 0.96rem; }
@@ -149,11 +159,40 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: var(--radius) !
   background: #ffffff; border: 1px solid var(--border); border-radius: 22px; padding: 22px 24px 18px;
   box-shadow: var(--shadow-lg);
 }
-.st-key-upload_panel { border-color: #e2e0fb; box-shadow: var(--glow); position: relative; }
-.st-key-process_panel { background: linear-gradient(180deg, #ffffff, #fafaff); }
+.st-key-upload_panel { border-color: #e2e0fb; box-shadow: var(--glow); position: relative; overflow: hidden; }
+.st-key-upload_panel::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--grad);
+}
+.st-key-upload_panel .dp-section { margin-top: 2px; }
+.st-key-process_panel { background: linear-gradient(180deg, #ffffff, #fafaff); margin-top: 14px; }
+
+/* sample-document buttons and divider inside the upload panel */
+.st-key-upload_panel .stButton > button:not([kind="primary"]) {
+  background: var(--surface-2) !important; min-height: 44px; font-size: 0.9rem !important;
+}
+.st-key-upload_panel .stButton > button:not([kind="primary"]) [data-testid="stIconMaterial"] { color: var(--indigo); }
+.dp-divider {
+  display: flex; align-items: center; gap: 12px; margin: 4px 0 12px; color: var(--muted);
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.dp-divider::before, .dp-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+/* selected file summary */
+.dp-file {
+  display: flex; align-items: center; gap: 14px; margin: 16px 0 12px; padding: 12px 14px; border-radius: 14px;
+  background: linear-gradient(135deg, #f7f5ff, #f0fbff); border: 1px solid #e0defb; animation: dp-rise .35s ease both;
+}
+.dp-file .ic {
+  width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; display: grid; place-items: center;
+  background: var(--grad); color: #fff; box-shadow: 0 8px 18px -8px rgba(79, 70, 229, 0.6);
+}
+.dp-file .ic svg { width: 19px; height: 19px; }
+.dp-file .meta { flex: 1; min-width: 0; }
+.dp-file .meta b { display: block; color: var(--text); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-file .meta span { color: var(--muted); font-size: 0.8rem; }
 
 /* ---------- workflow strip ---------- */
-.dp-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 30px 0 10px; }
+.dp-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 4px 0 10px; }
 .dp-flow-step {
   position: relative; padding: 15px 16px; border-radius: 16px; background: #ffffff;
   border: 1px solid var(--border); display: flex; gap: 12px; align-items: center; animation: dp-rise .5s ease both;
@@ -350,9 +389,13 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: var(--radius) !
 
 [data-testid="stFileUploaderDropzone"] {
   background: radial-gradient(520px 170px at 50% 0%, rgba(167, 139, 250, 0.10), transparent 72%), #fbfbff !important;
-  border: 1.5px dashed #c4c1f7 !important; border-radius: 16px !important; padding: 28px 20px !important;
+  border: 1.5px dashed #c4c1f7 !important; border-radius: 16px !important; padding: 34px 20px !important;
   transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+  display: flex !important; flex-direction: column-reverse; align-items: center; justify-content: center; gap: 14px; text-align: center;
 }
+[data-testid="stFileUploaderDropzone"] button { background: var(--grad) !important; color: #fff !important; border: none !important;
+  box-shadow: 0 10px 24px -10px rgba(79, 70, 229, 0.8) !important; padding: 0.5rem 1.1rem !important; }
+[data-testid="stFileUploaderDropzone"] button * { color: #fff !important; }
 [data-testid="stFileUploaderDropzone"]:hover { border-color: var(--indigo) !important; box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.08); background: #f8f7ff !important; }
 [data-testid="stFileUploaderDropzoneInstructions"] svg { color: var(--indigo) !important; }
 [data-testid="stFileUploaderDropzoneInstructions"] span { color: var(--text-2) !important; }

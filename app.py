@@ -31,10 +31,11 @@ from utils.file_validation import FileValidationError, sanitize_filename, sha256
 from utils.history import clear_history, load_history, record_run
 
 ROOT = Path(__file__).resolve().parent
-SAMPLES = {
-    "Invoice · 12 columns": ROOT / "samples" / "sample_a_invoice.pdf",
-    "Scanned statement · 3 pages": ROOT / "samples" / "sample_b_statement_scanned.pdf",
-    "Complex report · 3 tables": ROOT / "samples" / "sample_c_report.pdf",
+SAMPLES = {  # label -> (path, button icon, tooltip)
+    "Invoice": (ROOT / "samples" / "sample_a_invoice.pdf", ":material/receipt_long:", "Native PDF invoice · 12 columns"),
+    "Bank statement": (ROOT / "samples" / "sample_b_statement_scanned.pdf", ":material/document_scanner:",
+                          "Scanned bank statement · 3 pages · OCR"),
+    "Complex report": (ROOT / "samples" / "sample_c_report.pdf", ":material/analytics:", "Financial report · 3 tables"),
 }
 NAV = ["Home", "Overview", "Table Explorer", "Validation Center", "Export Center", "History"]
 NAV_ICONS = {"Home": ":material/home:", "Overview": ":material/space_dashboard:", "Table Explorer": ":material/table_view:",
@@ -196,24 +197,30 @@ def no_result_state(what: str) -> None:
 
 # =============================================================================== pages
 def page_home() -> None:
-    render('<div class="dp-hero"><span class="dp-eyebrow"><i>LOCAL</i> Document intelligence · no paid APIs</span>'
-           '<h1>Your documents.<br><span class="grad">Structured. Verified. Ready.</span></h1>'
-           '<p>Turn complex documents into accurate spreadsheets with intelligent extraction and automated validation.</p></div>')
-    render(workflow())
+    hero, panel = st.columns([1, 1.08], gap="large", vertical_alignment="center")
+    with hero:
+        checks = [("check", "Tables merged across pages, repeated headers removed"),
+                  ("check", "Line items, totals and running balances re-checked"),
+                  ("check", "Every row traced back to its source page")]
+        render('<div class="dp-hero"><span class="dp-eyebrow"><i>LOCAL</i> Document intelligence · no paid APIs</span>'
+               '<h1>Your documents.<br><span class="grad">Structured.<br>Verified. Ready.</span></h1>'
+               '<p>Turn complex documents into accurate spreadsheets with intelligent extraction and automated validation.</p>'
+               '<ul class="dp-checks">' + "".join(f"<li>{icon(ic)}<span>{esc(t)}</span></li>" for ic, t in checks)
+               + "</ul></div>")
 
-    left = st.container()
-    with left:
+    with panel:
         with st.container(key="upload_panel"):
             render(section("Upload a document", "upload"))
             up = st.file_uploader("Drop a PDF, scanned PDF or image", type=[e.lstrip(".") for e in SETTINGS.allowed_extensions],
                                   key="uploader", label_visibility="collapsed")
-            render(f'<div class="dp-chips" style="margin:6px 0 14px">{chip("PDF", "violet", "file")}'
+            render(f'<div class="dp-chips" style="margin:10px 0 16px">{chip("PDF", "violet", "file")}'
                    f'{chip("Scanned PDF", "violet", "scan")}{chip("PNG · JPG · TIFF", "violet", "eye")}'
-                   f'{chip(f"Up to {SETTINGS.max_pages} pages", "cyan", "pages")}{chip(f"{SETTINGS.max_file_mb} MB max", "ghost")}</div>')
-            st.caption("Or try a synthetic sample document:")
+                   f'{chip(f"Up to {SETTINGS.max_pages} pages", "cyan", "pages")}</div>')
+            render('<div class="dp-divider"><span>or try a sample document</span></div>')
             sc = st.columns(len(SAMPLES))
-            for col, (label, path) in zip(sc, SAMPLES.items()):
-                if col.button(label, key=f"sample_{path.stem}", width="stretch", disabled=not path.exists()):
+            for col, (label, (path, ic, tip)) in zip(sc, SAMPLES.items()):
+                if col.button(label, key=f"sample_{path.stem}", width="stretch", icon=ic, help=tip,
+                              disabled=not path.exists()):
                     ss.sample_choice = str(path)
 
             name, data = None, None
@@ -230,25 +237,23 @@ def page_home() -> None:
                 h = sha256_bytes(data)
                 over = pages is not None and pages > SETTINGS.max_pages
                 pages_txt = f"{pages} page{'s' if pages != 1 else ''}" if pages else "page count unknown"
-                render(f'<div class="dp-card" style="padding:12px 16px;margin:8px 0 12px;display:flex;align-items:center;gap:12px">'
-                       f'<div class="dp-flow-step" style="padding:0;border:none;background:none"><div class="ic">{icon("file")}</div></div>'
-                       f'<div style="flex:1"><b style="color:var(--text)">{esc(sanitize_filename(name))}</b><br>'
-                       f'<span style="color:var(--muted);font-size:.82rem">{kind} · {len(data) / 1024:,.0f} KB · {pages_txt}</span></div>'
+                render(f'<div class="dp-file"><div class="ic">{icon("file")}</div>'
+                       f'<div class="meta"><b>{esc(sanitize_filename(name))}</b>'
+                       f'<span>{kind} · {len(data) / 1024:,.0f} KB · {pages_txt}</span></div>'
                        f'{chip("Already processed", "passed", "check") if h in ss.results else ""}'
-                       f'{chip("Over page limit", "critical", "alert") if over else ""}</div>')
+                       f'{chip("Over page limit", "critical", "alert") if over else chip("Ready", "violet", "sparkles")}</div>')
                 llm_ok = llm_status_cached()["available"]
                 use_llm = st.toggle("Local LLM assist for ambiguous headers", value=False, disabled=not llm_ok,
                                     help="Sends only column header names to your local Ollama model. Numbers and checks "
                                          "stay deterministic. Off by default." if llm_ok else "Ollama is not running locally.")
-                b1, b2 = st.columns([1.4, 1])
-                already = h in ss.results
-                if already:
+                if h in ss.results:
+                    b1, b2 = st.columns([1.4, 1])
                     if b1.button("View results", type="primary", width="stretch", icon=":material/insights:"):
                         ss.active = h
                         goto("Overview")
                     rerun = b2.button("Re-run extraction", width="stretch")
                 else:
-                    rerun = b1.button("Start Extraction", type="primary", width="stretch", disabled=over,
+                    rerun = st.button("Start Extraction", type="primary", width="stretch", disabled=over,
                                       icon=":material/bolt:")
                 if rerun:
                     with proc_holder.container(key="process_panel"):
@@ -263,6 +268,9 @@ def page_home() -> None:
             else:
                 render(note("Files are processed on this computer. Nothing is uploaded to external services, and the "
                             "processing history stores metrics only — never document contents.", "", "lock"))
+
+    render(section("How it works", "sparkles"))
+    render(workflow())
 
 
 def page_overview(res: ProcessingResult) -> None:
