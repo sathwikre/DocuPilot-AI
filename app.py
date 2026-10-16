@@ -36,7 +36,6 @@ from utils.history import (
 
 ROOT = Path(__file__).resolve().parent
 SAMPLES = {  # label -> (path, button icon, tooltip)
-    "Invoice": (ROOT / "samples" / "sample_a_invoice.pdf", ":material/receipt_long:", "Native PDF invoice · 12 columns"),
     "Bank statement": (ROOT / "samples" / "sample_b_statement_scanned.pdf", ":material/document_scanner:",
                           "Scanned bank statement · 3 pages · OCR"),
     "Complex report": (ROOT / "samples" / "sample_c_report.pdf", ":material/analytics:", "Financial report · 3 tables"),

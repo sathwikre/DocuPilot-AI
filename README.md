@@ -86,7 +86,7 @@ On minimal Linux images, OpenCV may need `libgl1` and `libglib2.0-0` (`apt insta
 
 ## Using the app
 
-1. **Home**: drop a file, choose whether to remove repeated rows, and click **Convert to Excel**. Or click one of the three synthetic samples, which converts straight away.
+1. **Home**: drop a file, choose whether to remove repeated rows, and click **Convert to Excel**. Or click one of the synthetic samples (bank statement, complex report), which converts straight away.
 2. **Processing**: a live tracker shows the seven real stages (inspection, classification, text/OCR, table detection, multi-page reconstruction, validation, Excel), the page being processed, OCR page count and a ticking elapsed timer. The progress bar is computed from completed stages and processed pages, not a fake percentage.
 3. **Results (on Home)**: download the workbook, see pages / OCR pages / tables / rows / errors / warnings and a coloured square per page (text read directly, OCR, blank, failed; hover for OCR confidence). Below: a preview of each table (first 25 rows, flagged cells coloured with the finding as a tooltip), the checks with passed/checked counts and the problems found, and the **clean-up checklist**. Use **Tick the suggested fixes**, adjust, then **Apply to the Excel file**.
 4. **Overview**: real KPIs (pages, tables, rows, columns, critical errors, warnings, time, OCR usage), findings by severity, rows per source page, a page-by-page processing table, tables, and values found outside tables.

@@ -39,11 +39,11 @@ def test_empty_pages_show_empty_states(isolated_history):
 
 
 def test_upload_to_results_workflow(isolated_history):
-    at = _start(AppTest.from_file(APP, default_timeout=300), "Invoice")
+    at = _start(AppTest.from_file(APP, default_timeout=300), "Complex report")
     assert at.session_state["nav"] == "Home"
     assert any("Your Excel file is ready" in m.value for m in at.markdown)
     res = at.session_state["results"][at.session_state["active"]]
-    assert res.metrics()["critical"] == 2
+    assert res.metrics()["critical"] == 1
     for page in PAGES:
         at.sidebar.radio[0].set_value(page).run()
         assert not at.exception, f"{page}: {at.exception}"
@@ -53,12 +53,12 @@ def test_upload_to_results_workflow(isolated_history):
     # History recorded the run's real metrics and kept its files.
     import json
     hist = json.loads((isolated_history / "history.json").read_text())
-    assert hist[-1]["rows"] == 14 and hist[-1]["run_id"] == res.run_id
+    assert hist[-1]["rows"] == 39 and hist[-1]["run_id"] == res.run_id
     assert set(hist[-1]["files"]) >= {"source", "workbook", "validation", "result"}
 
 
 def test_history_page_reopens_a_stored_run(isolated_history):
-    at = _start(AppTest.from_file(APP, default_timeout=300), "Invoice")
+    at = _start(AppTest.from_file(APP, default_timeout=300), "Complex report")
     first = at.session_state["results"][at.session_state["active"]]
     at.session_state["results"] = {}
     at.session_state["active"] = None
@@ -80,7 +80,7 @@ def test_export_page_offers_real_workbook(isolated_history):
 
 
 def test_checklist_apply_rebuilds_the_workbook(isolated_history):
-    at = _start(AppTest.from_file(APP, default_timeout=300), "Invoice")
+    at = _start(AppTest.from_file(APP, default_timeout=300), "Complex report")
     h = at.session_state["active"]
     before = at.session_state["results"][h]
     apply = next(b for b in at.button if b.label == "Apply to the Excel file")
@@ -97,7 +97,7 @@ def test_keep_repeats_choice_reaches_the_engine_and_ocr_is_automatic(isolated_hi
     at = AppTest.from_file(APP, default_timeout=300)
     at.run()
     at.radio(key="opt_repeats").set_value("Keep them").run()
-    next(b for b in at.button if b.label.startswith("Invoice")).click().run()
+    next(b for b in at.button if b.label.startswith("Complex report")).click().run()
     assert not at.exception
     res = at.session_state["results"][at.session_state["active"]]
     assert "duplicates" not in res.options and res.ocr_mode == "auto"
