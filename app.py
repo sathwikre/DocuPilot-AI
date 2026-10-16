@@ -44,7 +44,7 @@ NAV = ["Home", "Overview", "Table Explorer", "Validation Center", "Export Center
 NAV_ICONS = {"Home": ":material/home:", "Overview": ":material/space_dashboard:", "Table Explorer": ":material/table_view:",
              "Validation Center": ":material/verified:", "Export Center": ":material/download:", "History": ":material/history:"}
 
-st.set_page_config(page_title="DocuPilot AI", page_icon="🧭", layout="wide", initial_sidebar_state="auto")
+st.set_page_config(page_title="DocuPilot AI", page_icon="🧭", layout="wide", initial_sidebar_state="expanded")
 inject_css()
 
 ss = st.session_state

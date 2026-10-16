@@ -77,7 +77,23 @@ def inject_css() -> None:
     render(f"<style>{css}</style>")
 
 
+_LOGO = Path(__file__).parent / "assets" / "incuxai_logo.jpg"
+
+
+@st.cache_data(show_spinner=False)
+def _logo_data_uri() -> str:
+    import base64
+    try:
+        return "data:image/jpeg;base64," + base64.b64encode(_LOGO.read_bytes()).decode()
+    except OSError:
+        return ""
+
+
 def brand() -> str:
+    """The sidebar header: the IncuXai logo; the text brand only if the logo file is missing."""
+    uri = _logo_data_uri()
+    if uri:
+        return f'<div class="dp-org-logo"><img src="{uri}" alt="IncuXai — AI for smart thinking"></div>'
     return ('<div class="dp-brand"><div class="dp-brand-mark">' + icon("logo") + '</div>'
             '<div><div class="dp-brand-name">DocuPilot AI</div><div class="dp-brand-sub">PDF · SCAN · PHOTO → EXCEL</div></div></div>')
 

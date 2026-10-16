@@ -549,6 +549,21 @@ h1, h2, h3, h4 { color: var(--text); }
 
 /* sidebar: dark wood */
 [data-testid="stSidebar"] { background: linear-gradient(180deg, #2f2017 0%, #24180f 100%); border-right: 1px solid #1a110a; }
+.dp-org-logo { width: 150px; margin: 6px 2px 8px; border-radius: 9px !important; border-radius: 12px; overflow: hidden; background: #fbf6f2;
+  box-shadow: 0 10px 24px -14px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(243, 233, 215, 0.10); }
+.dp-org-logo img { display: block; width: 100%; height: auto; }
+/* fixed sidebar on desktop: always open, fixed width, no collapse button or drag-resize.
+   On phones it stays collapsible, otherwise it would cover the whole page. */
+@media (min-width: 768px) {
+  [data-testid="stSidebar"] { min-width: 300px !important; max-width: 300px !important; width: 300px !important;
+    transform: none !important; visibility: visible !important; position: relative; }
+  [data-testid="stSidebar"][aria-expanded="false"] { margin-left: 0 !important; }
+  [data-testid="stSidebarCollapseButton"], [data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"],
+  [data-testid="stSidebar"] [data-testid="stSidebarResizeHandle"], [data-testid="stSidebar"] > div:last-child[style*="cursor"] {
+    display: none !important;
+  }
+  [data-testid="stSidebarHeader"] { min-height: 0.5rem; height: 0.5rem; padding: 0; }
+}
 .dp-brand-mark { background: linear-gradient(135deg, #fb923c, #d9480f); box-shadow: 0 8px 20px -8px rgba(249, 115, 22, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
 .dp-brand-mark svg { color: #ffffff; }
 .dp-brand-name { color: var(--cream); font-family: var(--display); font-weight: 600; }
