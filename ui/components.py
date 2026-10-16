@@ -77,14 +77,14 @@ def inject_css() -> None:
     render(f"<style>{css}</style>")
 
 
-_LOGO = Path(__file__).parent / "assets" / "incuxai_logo.jpg"
+_LOGO = Path(__file__).parent / "assets" / "incuxai_logo.png"
 
 
 @st.cache_data(show_spinner=False)
 def _logo_data_uri() -> str:
     import base64
     try:
-        return "data:image/jpeg;base64," + base64.b64encode(_LOGO.read_bytes()).decode()
+        return "data:image/png;base64," + base64.b64encode(_LOGO.read_bytes()).decode()
     except OSError:
         return ""
 

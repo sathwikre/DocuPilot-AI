@@ -122,6 +122,20 @@ def parse_number(text: Optional[str], decimal_comma: bool = False) -> Optional[P
     return ParsedNumber(val, bool(m.group("pct")), style, cur, drcr, decimals)
 
 
+_MARKUP_PAIR = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1")
+_MARKUP_LEFTOVER = re.compile(r"(?:(?<=\s)|^)(?:\*{2,}|_{2,})|(?:\*{2,}|_{2,})(?=\s|$|[:.,;)])")
+
+
+def strip_markup(text: Optional[str]) -> str:
+    """Remove markdown emphasis markers that documents carry as literal characters: '**Total**' -> 'Total',
+    '__Due__' -> 'Due', and stray '**' at a word edge. A single '*' (e.g. a footnote mark) is kept."""
+    if not text or ("**" not in text and "__" not in text):
+        return text or ""
+    out = _MARKUP_PAIR.sub(r"\2", text)
+    out = _MARKUP_LEFTOVER.sub("", out)
+    return re.sub(r"\s{2,}", " ", out).strip()
+
+
 def clean_spaces(text: Optional[str]) -> str:
     """normalise_text plus removal of non-breaking, zero-width and other hidden characters."""
     if text is None:

@@ -185,6 +185,39 @@ def test_ocr_mode_force_reads_digital_pages_with_ocr(invoice, ocr_ok):
     assert r.ocr_pages == [1] and r.ocr_mode == "force"
 
 
+@pytest.mark.parametrize("raw, clean", [
+    ("**Total**", "Total"), ("**Grand Total**", "Grand Total"), ("__Due__", "Due"), ("**", ""),
+    ("**Grand", "Grand"), ("Total**", "Total"), ("Total**:", "Total:"), ("Amount* (see note)", "Amount* (see note)"),
+    ("2*3", "2*3"), ("plain text", "plain text"), ("**1,200.00**", "1,200.00"), ("snake_case_id", "snake_case_id"),
+])
+def test_strip_markup(raw, clean):
+    from core.value_parser import strip_markup
+    assert strip_markup(raw) == clean
+
+
+def test_markdown_markers_never_reach_the_workbook(invoice_result):
+    base = copy.deepcopy(invoice_result.base_tables)
+    t = base[0]
+    desc = next(c for c, h in enumerate(t.original_header) if "desc" in h.lower())
+    qty = next(c for c, h in enumerate(t.original_header) if "qty" in h.lower() or "quantity" in h.lower())
+    t.original_header[desc] = f"**{t.original_header[desc]}**"
+    t.rows[0][desc] = f"**{t.rows[0][desc]}**"
+    t.rows[0][qty] = f"**{t.rows[0][qty]}**"
+    r = rebuild(dataclasses.replace(invoice_result, base_tables=base), invoice_result.options)
+    out = r.tables[0]
+    assert "**" not in "".join(out.columns) and not any("**" in c for row in out.rows for c in row)
+    assert out.values[0][qty] == invoice_result.tables[0].values[0][qty], "a bold number is still a number"
+    ws = load_workbook(io.BytesIO(r.excel_bytes))["Extracted Data"]
+    assert not any(isinstance(c.value, str) and "**" in c.value for row in ws.iter_rows() for c in row)
+
+
+def test_markdown_markers_removed_from_words():
+    from core.agent_orchestrator import _strip_word_markup
+    from core.models import Word
+    words = [Word("**Total**", 0, 0, 1, 1), Word("**", 1, 0, 2, 1), Word("1,200.00", 2, 0, 3, 1)]
+    assert [w.text for w in _strip_word_markup(words)] == ["Total", "1,200.00"]
+
+
 def test_ocr_mode_off_reports_scanned_pages(statement_scanned):
     r = process_document(statement_scanned[0], "st.pdf", ocr_mode="off")
     assert any("switched off" in w for w in r.warnings)

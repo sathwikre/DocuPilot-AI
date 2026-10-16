@@ -19,7 +19,7 @@ from typing import Iterable, Optional, Sequence
 from core.data_normalizer import TypingOptions, is_identifier_column, is_summary_row
 from core.models import LogicalTable, RemovedRow, ValidationIssue
 from core.value_parser import (
-    clean_spaces, infer_date_order, ocr_repair_number, parse_date, parse_number,
+    clean_spaces, infer_date_order, ocr_repair_number, parse_date, parse_number, strip_markup,
 )
 
 
@@ -278,6 +278,11 @@ def clean(base: Sequence[LogicalTable], selected: Iterable[str],
     out = Cleaned([copy.deepcopy(t) for t in base])
     for t in out.tables:
         types = (ref_types or {}).get(t.table_id, [])
+        # Always: literal markdown emphasis ('**Total**') is formatting, not content.
+        t.original_header = [strip_markup(h) for h in t.original_header]
+        t.title = strip_markup(t.title) if t.title else t.title
+        for row in t.rows:
+            row[:] = [strip_markup(c) if ("**" in c or "__" in c) else c for c in row]
         for r, row in enumerate(t.rows):  # mark totals first so row fixes leave them alone
             if is_summary_row(row):
                 t.row_meta[r].kind = "summary"

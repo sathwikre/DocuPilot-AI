@@ -1,14 +1,15 @@
 # DocuPilot AI
 
-**Your documents. Structured. Verified. Ready.**
+**Turn any PDF, scan or photo into a clean, checked Excel workbook.** An IncuXai project.
 
-DocuPilot AI turns PDFs, scanned documents and images into validated Excel workbooks. It finds the
-tables, reconstructs tables that continue across pages, checks the numbers (line arithmetic, totals,
-running balances, row totals, duplicates, gaps, misalignment), and exports a formatted workbook with a
-validation report and a full extraction audit trail.
+DocuPilot AI finds the tables in PDFs, scanned documents and images, joins tables that continue across pages, checks
+the numbers (line arithmetic, totals, running balances, row totals, duplicates, gaps, date order, misalignment), and
+exports a formatted workbook with a validation report and a full extraction audit trail. A clean-up checklist fixes
+the usual PDF-to-Excel problems in one click, and every conversion is kept in History with its files.
 
 Everything runs on your machine. There are no API keys and no paid services, and no document content is sent anywhere.
 
+![Results](docs/screenshots/results.png)
 
 
 ---
@@ -45,10 +46,11 @@ Everything runs on your machine. There are no API keys and no paid services, and
 | **Wide tables** | Tested with 10-, 12- and 14-column tables. |
 | **Multi-page stitching** | An evidence-scored merge (repeated header, "continued" titles, column geometry, data-type agreement, page position) with hard stops for a different header, a different column count, or other content in between. A row split across a page break is re-joined. An identical row at a page boundary is removed only when a running balance proves it is a reprint; otherwise it is kept and flagged. Every decision is logged. |
 | **Header normalisation** | Superficial variants are normalised ("Txn Date" → "Transaction Date", OCR typos such as "Descripton") while distinct concepts stay distinct (Debit ≠ Credit, Posting date ≠ Value date). Original headers are kept in the audit. |
-| **Typing** | Negatives (`-1.00`, `(1.00)`, `1.00-`), currencies, thousands separators (including Indian and European), percentages and dates (with day/month order inferred per column). Identifiers stay text, so leading zeros survive. Audited OCR repairs, such as `1O0.00 → 100.00` or `10.695.60 → 10,695.60`, apply only in numeric columns of OCR rows. |
+| **Typing** | Negatives (`-1.00`, `(1.00)`, `1.00-`), currencies, thousands separators (including Indian and European), percentages and dates (with day/month order inferred per column). Identifiers stay text, so leading zeros survive. Audited OCR repairs, such as `1O0.00 → 100.00` or `10.695.60 → 10,695.60`, apply only in numeric columns of OCR rows. Markdown emphasis that documents carry as literal characters (`**Total**`, `__Due__`) is removed from words, cells, headers and titles, so `**65.00**` is still the number 65.00; a single `*` (footnote mark) is kept. |
 | **Validation** | Deterministic `Decimal` arithmetic. Every check returns **Passed / Failed / Unable to Verify**. Results are split into confirmed errors and suspected anomalies. Values are never changed to make totals match. |
 | **Excel** | *Extracted Data* (typed values, Excel tables with filters, frozen headers, number formats, highlighted cells with explanatory comments), *Validation Report*, *Extraction Audit*, *Document Summary* (including a checks table with items looked at / correct, and the clean-up options applied), one sheet per table when there are several, plus *Totals* and *Removed rows* sheets when those options apply. |
-| **UI** | Streamlit app with a warm "reading-room" design (paper surfaces, dark wood sidebar, serif headings). Home is a single flow: upload with options → live stage tracker → *Your Excel file is ready* with download, key numbers and a per-page strip showing how each page was read → table preview with flagged cells → checks (passed/checked per check) and problems → clean-up checklist. Overview, Table Explorer, Validation Center, Export Center and History go deeper. |
+| **History** | Every conversion is kept on this computer with its uploaded file, Excel workbook, validation report and saved result. Reopen a past result instantly (the document is not read again), download any of its files again, or delete it. |
+| **UI** | Streamlit app with a warm design: paper-coloured surfaces, a dark sidebar with the IncuXai logo, orange accents and serif headings. The sidebar is fixed on desktop (no collapse or resize) and collapsible on phones. Home is a single flow: upload with options → live stage tracker → *Your Excel file is ready* with download, key numbers and a per-page strip showing how each page was read → table preview with flagged cells → checks (passed/checked per check) and problems → clean-up checklist. Overview, Table Explorer, Validation Center, Export Center and History go deeper. |
 
 ## Quick start (Windows)
 
@@ -69,7 +71,7 @@ Then open http://localhost:8501.
 
 ```powershell
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.venv\Scripts\python.exe -m pytest                       # 113 tests, about 1.5 minutes
+.venv\Scripts\python.exe -m pytest                       # 135 tests, about 1 minute
 .venv\Scripts\python.exe scripts\evaluate.py            # accuracy report -> reports\evaluation_report.md
 ```
 
@@ -95,18 +97,21 @@ On minimal Linux images, OpenCV may need `libgl1` and `libglib2.0-0` (`apt insta
 7. **Export Center**: download the `.xlsx` workbook, CSV files (zip) or the validation report (JSON), and preview the report and audit.
 8. **History**: every conversion with its date, type, pages, tables, rows, errors and warnings. For each run: **Open results** (reopens it instantly, without reading the document again), download the **original file**, the **Excel workbook** or the **validation report**, or **Delete** it. Search by file name; totals and disk use are shown at the top.
 
-Results are kept per browser session and keyed by file hash, so navigating or re-rendering never re-processes a document. Converting the same file again (for example with other upload options) replaces the stored result.
+Results are kept per browser session and keyed by file hash, so navigating or re-rendering never re-processes a document. Converting the same file again (for example with other upload options) replaces the result in the session and adds a new History entry.
 
-| Overview | Validation |
+| Home | Clean-up checklist |
 |---|---|
+| ![Home](docs/screenshots/home.png) | ![Clean-up checklist](docs/screenshots/cleanup_checklist.png) |
 | ![Overview](docs/screenshots/overview.png) | ![Validation](docs/screenshots/validation_center_statement.png) |
 | ![Table explorer](docs/screenshots/table_explorer.png) | ![Export](docs/screenshots/export_center.png) |
+| ![History](docs/screenshots/history.png) | |
 
 ## Architecture
 
 ```text
 app.py                      Streamlit UI (pages, session state, progress rendering)
-ui/                         design system: styles.css, components.py (HTML builders, SVG icons), charts.py
+ui/                         design system: styles.css, components.py (HTML builders, SVG icons), charts.py,
+                            assets/incuxai_logo.png (sidebar logo)
 core/
   agent_orchestrator.py     pipeline + recovery decisions + progress events
   document_inspector.py     open/validate PDF or image, page classification, page limit
@@ -126,21 +131,25 @@ models/local_llm.py         optional Ollama client (localhost only)
 config/settings.py          central settings, overridable with DOCUPILOT_* environment variables
 utils/                      file validation, JSON logging, run history (files + metrics)
 scripts/                    sample generator, evaluation, stress probe, LLM demo, model pre-fetch
-tests/                      pytest suite (93 tests, including a headless UI workflow test)
+tests/                      pytest suite (135 tests, including headless UI workflow tests)
 ```
 
 **Pipeline and recovery:**
 
 ```text
-upload -> validate (type by magic bytes, size, name) -> open (reject encrypted/corrupt/>50 pages)
+upload -> validate (type by magic bytes, size, name) -> open (reject encrypted/corrupt; keep the first 50 pages)
   -> classify pages: digital | scanned | mixed | empty
   -> text: pdfplumber words (digital) | render 200 dpi + deskew + orientation + OCR (scanned/mixed/rotated)
+           (literal markdown markers such as **bold** are stripped from words)
   -> tables: ruled grid (pdfplumber / OpenCV) -> geometric layout reconstruction
        recovery: malformed ruled table -> layout method; weak native page with images -> OCR retry;
                  mixed page -> keep the better of native vs OCR; failing page -> recorded, others continue
   -> stitch fragments across pages (evidence-scored; schema mismatch blocks merge)
-  -> normalise headers, classify summary rows, type columns (optional LLM for unmapped headers)
-  -> validate -> Excel
+  -> clean-up checklist fixes (text, rows) on a copy of the stitched tables
+  -> normalise headers, classify summary rows, type columns (typing options from the checklist)
+  -> validate -> Excel -> History (uploaded file, workbook, report, saved result)
+
+  "Apply" on the checklist re-runs only the last four steps on the stored tables.
 ```
 
 ## Technology choices
@@ -180,6 +189,8 @@ All samples are **synthetic** and generated by `scripts/generate_samples.py`. Th
 | **C** `sample_c_report.pdf` | 4 pages: a 14-column ruled table continued on page 2, a borderless 10-column table with empty cells, an unrelated 10-column table on page 3 that must *not* be merged, negatives in parentheses, and a narrative page with no tables. **Planted error:** one FY Total overstated by 10.0. |
 | **D** `sample_d_invoice_photo.png` | Sample A as a grayscale image (exercises image upload and OCR grid detection). |
 
+The Home page offers **B** (bank statement) and **C** (complex report) as one-click samples. A and D are used by the tests and the evaluation and can be uploaded from `samples/`.
+
 **Results** (`scripts/evaluate.py`, run on the development machine; full report in `reports/evaluation_report.md`):
 
 | Sample | Cell accuracy | Row completeness | Column alignment | Unwanted duplicates | Planted errors detected | False criticals | Time |
@@ -210,22 +221,24 @@ At 100 dpi, OCR misreads thousands commas as periods (repaired and audited) and 
 - *Unwanted duplicates*: extracted copies of an already-matched row.
 - *Validation recall*: planted discrepancies reported as critical at the right table and row.
 
-**Automated tests**: 93 tests, all passing on the development machine (`pytest`, about 1 minute). They cover:
+**Automated tests**: 135 tests, all passing on the development machine (`pytest`, about 1 minute). They cover:
 
-- number, negative, decimal and date parsing;
-- malformed, encrypted, blank and oversized files, path traversal, and the 50/51-page limit (50 pages: 500 rows stitched into one table in 1.3 s);
+- number, negative, decimal and date parsing, and markdown-marker stripping (`**Total**`, `__Due__`);
+- malformed, encrypted, blank and oversized files, path traversal, and the page limit (50 pages: 500 rows stitched into one table in 1.3 s; a 52-page file converts its first 50 pages and says so);
 - wide tables, wrapped cells and empty cells;
 - multi-page merging, repeated headers, the continued boundary row, and independent tables with equal column counts;
 - legitimate duplicates;
-- incorrect totals, running balances, column shifts, sequence gaps and unreadable amounts;
+- incorrect totals, running balances, column shifts, sequence gaps, out-of-order dates and unreadable amounts;
+- every clean-up checklist fix, its detection counts and suggestions, and the instant rebuild (Totals and Removed rows sheets, cell highlighting on/off);
+- history: stored files, reopening a run, updating it after Apply, the checksum check, delete and clear, and metrics-only mode;
 - OCR accuracy on the scanned statement and the image upload;
 - workbook structure, types, formats, comments and formula-injection protection;
 - LLM safety (remote hosts refused, constrained answers, pipeline works without Ollama);
-- a headless UI workflow test (sample → Start Extraction → all pages render, no re-processing on rerender, history stores metrics only).
+- headless UI workflow tests (sample → results on Home → all pages render, no re-processing on rerender; checklist Apply rebuilds the workbook; the repeated-rows choice reaches the engine; History reopens a stored run).
 
 ## Optional local LLM
 
-Turn on **Local LLM assist** on the Home page (enabled only when Ollama is reachable on `127.0.0.1:11434`). The LLM has one job: proposing semantic roles for column headers that the rules could not map.
+The app does not use an LLM: the Home page has no LLM option, and every result comes from the rules. The local LLM path remains available to scripts only (`process_document(data, name, use_llm=True)`, used by `scripts/llm_demo.py`) and needs Ollama running on `127.0.0.1:11434`. It has one job: proposing semantic roles for column headers that the rules could not map.
 
 - It receives **only header names**, never cell values.
 - Its answers are constrained by a JSON schema to a fixed list of roles. It cannot override a rule-based mapping or assign one role twice.
@@ -269,13 +282,14 @@ Settings can be overridden with environment variables: `DOCUPILOT_MAX_PAGES`, `D
 
 | Symptom | Fix |
 |---|---|
-| Sidebar shows OCR as `rapidocr-onnxruntime-ch` | The English model could not be downloaded. Run `scripts/download_models.py` with internet access. The fallback works, but often drops spaces in English text. |
-| "Local LLM: Ollama not reachable" | Start Ollama (`ollama serve`) and make sure a model is installed (`ollama list`). The toggle stays disabled until then. |
+| Overview's page table shows the method `OCR (rapidocr-onnxruntime-ch)` | The English model could not be downloaded. Run `scripts/download_models.py` with internet access. The fallback works, but often drops spaces in English text. |
+| `scripts/llm_demo.py`: "Ollama not reachable" | Start Ollama (`ollama serve`) and make sure a model is installed (`ollama list`). The app itself does not need it. |
 | `ImportError: libGL.so.1` (Linux) | `apt install libgl1 libglib2.0-0` |
 | Scanned page shows "No tables" | Check the page-by-page table for OCR confidence. Very low-resolution or handwritten pages are not supported. Try a higher-quality scan, or raise `DOCUPILOT_OCR_DPI`. |
 | Dates look swapped | When a column has no day above 12, day/month order cannot be proven. The column is read day-first and a warning is shown on the table. |
-| Upload rejected | Check the message: password-protected PDFs, more than 50 pages, a file over 60 MB, and mismatched file content are refused on purpose. |
-| UI changes not visible after editing code | Restart Streamlit. Its hot reload may keep imported modules from before the edit. |
+| Upload rejected | Check the message: password-protected PDFs, a file over 60 MB, and mismatched file content are refused on purpose. A file over 50 pages is not refused; only its first 50 pages are converted. |
+| UI or theme changes not visible | Stop every running copy of the app and start it again. Streamlit reads `.streamlit/config.toml` (the theme) only at start-up, and a copy started before the change keeps serving the old look. Then refresh the browser. |
+| Cells show `**` around text | Restart the app; this version strips markdown markers. Re-convert the document (results reopened from History keep their original text). |
 
 ## Known limitations
 
@@ -286,7 +300,9 @@ Settings can be overridden with environment variables: `DOCUPILOT_MAX_PAGES`, `D
 - **No confidence scores.** Per-cell confidence is not reported (only per-page OCR confidence) rather than invent one.
 - **Dates and conventions.** Ambiguous numeric dates default to day-first, with a warning. Statement sign conventions are inferred from the data.
 - **Large scans are slow on CPU.** A 50-page scan takes several minutes.
-- **Single user.** Results live in the browser session; there is no multi-user job queue.
+- **Single user.** Results live in the browser session and the local History; there is no multi-user job queue or sign-in.
+- **History grows on disk.** It keeps the uploaded files and outputs of the newest 200 runs; delete runs or clear it from the History page.
+- **Empty cells in Table Explorer** are shown by Streamlit's grid as a grey `None`; they are empty in the workbook.
 
 ## Licenses and attribution
 
@@ -312,6 +328,6 @@ Settings can be overridden with environment variables: `DOCUPILOT_MAX_PAGES`, `D
 
 > **PyMuPDF is AGPL-3.0.** Using it locally is fine. If you distribute DocuPilot AI, or offer it as a network service to others, AGPL obligations apply (publish the complete source) unless you obtain an Artifex commercial license. PyMuPDF is used for rendering, inspection and image wrapping. Replacing it with `pypdfium2` (Apache-2.0/BSD) is possible if AGPL is a concern.
 
-Icons are drawn inline in the style of Lucide (ISC). The app uses Streamlit's bundled Source Sans font (OFL); no external font is loaded.
+Icons are drawn inline in the style of Lucide (ISC). The app uses Streamlit's bundled Source Sans font (OFL) and system serif fonts for headings; no external font is loaded. The IncuXai logo (`ui/assets/incuxai_logo.png`) belongs to IncuXai.
 
 Sample documents and all their data are synthetic. Any resemblance to real companies is coincidental.

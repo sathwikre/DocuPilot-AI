@@ -30,7 +30,7 @@ from core.pdf_extractor import extract_digital_page, open_plumber, page_words
 from core.table_detector import words_text
 from core.table_merger import build_logical_tables
 from core.validator import Validator
-from core.value_parser import normalise_text
+from core.value_parser import normalise_text, strip_markup
 from utils.file_validation import sha256_bytes, validate_upload
 from utils.logging_config import get_logger, log_event
 
@@ -225,10 +225,10 @@ class AgentOrchestrator:
                     w.report.method = "none"
                 elif self._wants_ocr(p):
                     if p.kind in ("mixed", "digital"):
-                        w.words = page_words(plumber.pages[i])  # keep the native layer for comparison
+                        w.words = _strip_word_markup(page_words(plumber.pages[i]))  # native layer, for comparison
                     self._ocr(doc, i, w)
                 else:
-                    w.words = page_words(plumber.pages[i])
+                    w.words = _strip_word_markup(page_words(plumber.pages[i]))
                     w.report.method = "native text"
             except Exception as exc:
                 self._fail(w, f"text extraction failed: {type(exc).__name__}: {exc}")
@@ -247,6 +247,7 @@ class AgentOrchestrator:
                 w.report.warnings.append(f"OCR not available ({reason}); using native text only")
             return False
         w.ocr = ocr_engine.ocr_page_words(doc[i], i + 1)
+        w.ocr.words[:] = _strip_word_markup(w.ocr.words)
         w.report.ocr_used = True
         w.report.ocr_confidence = w.ocr.mean_confidence
         w.report.method = f"OCR ({ocr_engine.ocr_backend()})"
@@ -345,6 +346,19 @@ class AgentOrchestrator:
         except Exception as exc:
             notes.append(f"Local LLM unavailable ({type(exc).__name__}); continued with rules only.")
             return None
+
+
+def _strip_word_markup(words: list[Word]) -> list[Word]:
+    """Drop markdown emphasis markers that bold text often carries as literal characters ('**Total**' -> 'Total').
+    A word that is nothing but markers is removed."""
+    out = []
+    for wd in words:
+        if "**" in wd.text or "__" in wd.text:
+            wd.text = strip_markup(wd.text)
+            if not wd.text:
+                continue
+        out.append(wd)
+    return out
 
 
 def _typed_reference(base: list[LogicalTable], mapper=None) -> list[LogicalTable]:
