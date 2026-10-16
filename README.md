@@ -9,7 +9,7 @@ validation report and a full extraction audit trail.
 
 Everything runs on your machine. There are no API keys and no paid services, and no document content is sent anywhere.
 
-![Home](docs/screenshots/home.png)
+
 
 ---
 
